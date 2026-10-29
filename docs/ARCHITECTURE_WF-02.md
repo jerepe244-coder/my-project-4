@@ -5,7 +5,7 @@ El workflow **ZYRVAE WF-02** automatiza la ingesta masiva de prospectos a partir
 
 * **Estado de activación:** `active: false` (Inactivo según requerimiento).
 * **ID de Integración con WF-01:** `tTHszjE5cqMyK1iF` (`ZYRVAE WF-01 Lead Intake & Data Quality`).
-* **Tabla de persistencia propuesta:** `website_audits` (relacionada 1:N con `leads`).
+* **Tabla de persistencia propuesta:** `website_audits` (relacionada 1:N con la tabla existente `prospects` mediante `prospect_id`).
 
 ---
 
@@ -14,7 +14,7 @@ El workflow **ZYRVAE WF-02** automatiza la ingesta masiva de prospectos a partir
 ```mermaid
 flowchart TD
     Start(["Manual Trigger / Binary CSV"]) --> NodeParse["Parse & Validate CSV"]
-    NodeParse --> Loop["Loop Over Leads (Sequential Batch 1)"]
+    NodeParse --> Loop["Loop Over Prospects (Sequential Batch 1)"]
     Loop --> CallWF01["Call WF-01 (tTHszjE5cqMyK1iF)"]
     CallWF01 --> SSRF["SSRF Security Filter"]
     SSRF --> CheckSafe{"¿Es Target Seguro?"}
@@ -34,12 +34,12 @@ flowchart TD
 | :--- | :--- | :--- |
 | **Manual Trigger** | `n8n-nodes-base.manualTrigger` | Inicio manual / testeo controlado en n8n UI. |
 | **Parse & Validate CSV** | `n8n-nodes-base.code` | Soporte para entrada binaria o texto; validación de encabezados; rechazo de filas vacías; validación sintáctica de URL; deduplicación intra-archivo. |
-| **Loop Over Leads** | `n8n-nodes-base.splitInBatches` | Tamaño de lote 1 (`batchSize: 1`) para garantizar procesamiento secuencial estricto y evitar condiciones de carrera (*race conditions*) en deduplicación. |
-| **Call WF-01** | `n8n-nodes-base.executeWorkflow` | Invoca a `ZYRVAE WF-01` (`tTHszjE5cqMyK1iF`) delegando normalización y deduplicación en la base de datos principal de leads. |
+| **Loop Over Prospects** | `n8n-nodes-base.splitInBatches` | Tamaño de lote 1 (`batchSize: 1`) para garantizar procesamiento secuencial estricto y evitar condiciones de carrera (*race conditions*) en deduplicación. |
+| **Call WF-01** | `n8n-nodes-base.executeWorkflow` | Invoca a `ZYRVAE WF-01` (`tTHszjE5cqMyK1iF`) delegando normalización y deduplicación en la base de datos principal (`prospects`). |
 | **SSRF Security Filter** | `n8n-nodes-base.code` | Evalúa la URL contra rangos RFC 1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`), link-local/cloud metadata (`169.254.0.0/16`) y protocolos inseguros (`file:`, `ftp:`). |
 | **Is Target Safe?** | `n8n-nodes-base.if` | Bifurcación condicional según el resultado del filtro SSRF. |
 | **HTTP Website Audit** | `n8n-nodes-base.httpRequest` | Petición `GET` no invasiva. Timeout 8.000 ms, máx. 5 redirecciones, headers estándar con User-Agent corporativo, `neverError: true` para captura controlada de errores 4xx/5xx. |
-| **Extract Metadata & Facts** | `n8n-nodes-base.code` | Extracción regex segura de `<title>`, `<meta name="description">`, `<meta name="viewport">`, verificación HTTPS y derivación de hipótesis comerciales objetivas. |
+| **Extract Metadata & Facts** | `n8n-nodes-base.code` | Extracción regex segura de `<title>`, `<meta name="description">`, `<meta name="viewport">`, verificación HTTPS y derivación de hipótesis comerciales objetivas vinculadas al `prospect_id`. |
 | **Handle SSRF Block** | `n8n-nodes-base.code` | Registro seguro de evidencia de bloqueo por SSRF sin emitir llamadas de red. |
 | **Prepare Persistence Payload** | `n8n-nodes-base.code` | Mapeo al esquema estandarizado de `website_audits`. |
 
@@ -50,7 +50,7 @@ flowchart TD
 ### Tabla `website_audits`
 Definida en [`sql/002_create_website_audits_table.sql`](file:///home/runner/work/my-project-4/my-project-4/sql/002_create_website_audits_table.sql):
 * `id` (VARCHAR 36, PK).
-* `lead_id` (VARCHAR 36, FK -> `leads.id`).
+* `prospect_id` (VARCHAR 36, FK -> `prospects.id`).
 * `audit_date` (TIMESTAMP WITH TIME ZONE).
 * `initial_url` (TEXT).
 * `final_url` (TEXT).

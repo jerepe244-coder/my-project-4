@@ -40,6 +40,30 @@
       "created_at": "2026-10-29T17:24:01.872Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "847298c6-8c56-4101-85ed-ec5849fe5cbc",
+      "role": "agent",
+      "content": "He completado la construcción y verificación del pipeline para **ZYRVAE WF-02 — CSV Lead Import & Website Audit** cumpliendo con todas las directivas de seguridad, trazabilidad e integridad.\n\n---\n\n### 1. Qué está Implementado\n\n* **Definición del Workflow n8n:** [`workflows/ZYRVAE_WF-02_CSV_Lead_Import_Website_Audit.json`](https://github.com/jerepe244-coder/my-project-4/blob/main/workflows/ZYRVAE_WF-02_CSV_Lead_Import_Website_Audit.json)\n  * Configurado con `active: false`.\n  * Nodo `Call WF-01 (Intake & Dedup)` vinculado al ID verificado de WF-01 (`tTHszjE5cqMyK1iF`).\n  * Concurrencia secuencial estricta (`batchSize: 1` en `Split In Batches`) para prevenir condiciones de carrera en la deduplicación de WF-01.\n  * Extracción objetiva de metadatos HTML (Title, Meta Description, Viewport, SSL) y clasificación de hipótesis comerciales sin invención de métricas ni emulación invasiva.\n* **Esquema de Base de Datos:** [`sql/002_create_website_audits_table.sql`](https://github.com/jerepe244-coder/my-project-4/blob/main/sql/002_create_website_audits_table.sql)\n  * DDL para la tabla `website_audits` relacionada con `leads` por `lead_id`, con columnas separadas para evidencia técnica (`raw_evidence`) e hipótesis comerciales (`commercial_hypotheses`).\n* **Motor Lógico y de Seguridad:** [`scripts/audit_engine.py`](https://github.com/jerepe244-coder/my-project-4/blob/main/scripts/audit_engine.py)\n  * Filtro anti-SSRF con lista negra estricta de IPs privadas (RFC 1918), loopback (`127.0.0.0/8`, `::1`), link-local/cloud metadata (`169.254.0.0/16`) y esquemas no HTTP.\n* **Documentación Técnica:** [`docs/ARCHITECTURE_WF-02.md`](https://github.com/jerepe244-coder/my-project-4/blob/main/docs/ARCHITECTURE_WF-02.md) y [`workflows/README.md`](https://github.com/jerepe244-coder/my-project-4/blob/main/workflows/README.md).\n\n---\n\n### 2. Qué está Verificado (Pruebas con Datos Sintéticos)\n\nSe ejecutó la suite de integración en [`tests/test_wf02_pipeline.py`](https://github.com/jerepe244-coder/my-project-4/blob/main/tests/test_wf02_pipeline.py) utilizando el lote sintético [`tests/fixtures/synthetic_leads_test.csv`](https://github.com/jerepe244-coder/my-project-4/blob/main/tests/fixtures/synthetic_leads_test.csv):\n\n| Caso de Prueba | Entrada Sintética | Comportamiento Comprobado | Resultado |\n| :--- | :--- | :--- | :---: |\n| **TEST-01 (Válido)** | `https://example.com` | Auditoría real 200 OK, extracción de título (\"Example Domain\"), verificación SSL y detección de falta de viewport. | **OK** |\n| **TEST-02 (Error HTTP)** | `https://httpbin.org/status/404` | Error 404 capturado; **el lead se conserva**, registrándose la evidencia del fallo. | **OK** |\n| **TEST-03 (Sintaxis Inválida)** | `not-a-valid-domain` | Rechazado en el parsing inicial y catalogado como `INVALID_URL_SYNTAX`. | **OK** |\n| **TEST-04 (Duplicado Intra-Lote)** | `https://example.com` (repetido) | Detectado por el parser y omitido como `IN_BATCH_DUPLICATE`. | **OK** |\n| **TEST-05 (SSRF Attack)** | `http://127.0.0.1:8080/admin` | Bloqueado de inmediato por el guard anti-SSRF sin realizar llamadas de red. | **OK** |\n| **TEST-06 (Fila Vacía)** | Fila sin campos requeridos | Descartada y registrada en el log de errores como `EMPTY_ROW`. | **OK** |\n\n*Resultado:* **6 de 6 pruebas unitarias y de integración superadas con éxito (0.202s).**\n\n---\n\n### 3. Acciones que Requieren Autorización Explícita y Próximos Pasos\n\nEn estricto cumplimiento de tus instrucciones, **no se ha modificado la base de datos remota ni la instancia n8n en vivo**:\n\n1. **Creación de la tabla `website_audits`:** ¿Autorizás la ejecución del script DDL [`sql/002_create_website_audits_table.sql`](https://github.com/jerepe244-coder/my-project-4/blob/main/sql/002_create_website_audits_table.sql) en tu motor de base de datos?\n2. **Despliegue del Workflow en n8n:**\n   * **Opción Directa (Recomendada y sin requerir credenciales):** Podés importar directamente [`workflows/ZYRVAE_WF-02_CSV_Lead_Import_Website_Audit.json`](https://github.com/jerepe244-coder/my-project-4/blob/main/workflows/ZYRVAE_WF-02_CSV_Lead_Import_Website_Audit.json) desde la interfaz web de n8n (**Workflows > Import from File**).\n   * **Opción Automatizada:** Si preferís que lo publique yo directamente en tu instancia vía API, necesitaría tu autorización para configurarlo una vez que agregues el token en un secret de GitHub (`N8N_MCP_TOKEN`).",
+      "status": "completed",
+      "model": "gemini-3.8-flash-medium",
+      "client_type": "gemini-bridge",
+      "parent_message_id": "041ffad7-6d37-434f-9923-acaa925c2255",
+      "created_at": "2026-10-29T17:28:25.485Z",
+      "sender": "macOS",
+      "is_cancelled": false
+    },
+    {
+      "id": "205eafac-b515-4df5-868f-8efd6ef2d01a",
+      "role": "user",
+      "content": "Buen trabajo. Antes de desplegar, hacé una revisión final y breve de los archivos generados.\n\n1. Confirmá que el JSON utiliza correctamente WF-01 y es compatible con nuestra versión de n8n.\n2. Revisá la discrepancia entre la tabla existente prospects y la referencia SQL a leads. Confirmá qué almacenamiento utiliza realmente el workflow y corregí la propuesta si hace falta.\n3. Verificá que los nodos, las conexiones y las dependencias externas sean compatibles con la instancia real.\n4. No ejecutes SQL remoto ni modifiques la instancia todavía.\n\nEntregame los problemas encontrados y los pasos exactos para importar y probar el workflow inactivo. Si todo está correcto, recomendá el siguiente paso. No reconstruyas lo que ya funciona.",
+      "status": "pending",
+      "model": "gemini-3.8-flash-medium",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-10-29T17:29:40.081Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }

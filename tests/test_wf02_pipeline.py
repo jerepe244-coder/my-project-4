@@ -86,24 +86,24 @@ class TestZYRVAEWF02Pipeline(unittest.TestCase):
         1. Fila CSV válida -> 2. Invocación WF-01 (mock ID) -> 3. Auditoría -> 4. Payload website_audits
         """
         parsed = parse_and_validate_csv(self.csv_content)
-        valid_lead = parsed["valid_leads"][0]  # [TEST-01]
+        valid_prospect = parsed["valid_leads"][0]  # [TEST-01]
 
-        # Simulación de respuesta de WF-01 Lead Intake & Data Quality
+        # Simulación de respuesta de WF-01 Lead Intake & Data Quality asociada a tabla prospects
         mock_wf01_response = {
-            "lead_id": str(uuid.uuid4()),
+            "prospect_id": str(uuid.uuid4()),
             "status": "CREATED_NEW",
-            "normalized_business_name": valid_lead["business_name"].replace("[TEST-01] ", ""),
-            "normalized_website_url": valid_lead["website_url"]
+            "normalized_business_name": valid_prospect["business_name"].replace("[TEST-01] ", ""),
+            "normalized_website_url": valid_prospect["website_url"]
         }
 
         # Auditoría web
         audit_result = audit_website(mock_wf01_response["normalized_website_url"])
 
-        # Generación del registro a persistir en website_audits
+        # Generación del registro a persistir en website_audits (vinculado a prospects.id)
         audit_db_record = {
             "id": str(uuid.uuid4()),
-            "lead_id": mock_wf01_response["lead_id"],
-            "initial_url": valid_lead["website_url"],
+            "prospect_id": mock_wf01_response["prospect_id"],
+            "initial_url": valid_prospect["website_url"],
             "final_url": audit_result.get("final_url"),
             "http_status": audit_result.get("http_status"),
             "redirect_count": audit_result.get("redirect_count", 0),
@@ -119,7 +119,7 @@ class TestZYRVAEWF02Pipeline(unittest.TestCase):
         }
 
         # Verificaciones de integridad y trazabilidad
-        self.assertEqual(audit_db_record["lead_id"], mock_wf01_response["lead_id"])
+        self.assertEqual(audit_db_record["prospect_id"], mock_wf01_response["prospect_id"])
         self.assertIsNotNone(audit_db_record["id"])
         self.assertTrue(audit_db_record["is_accessible"])
         self.assertEqual(audit_db_record["http_status"], 200)
