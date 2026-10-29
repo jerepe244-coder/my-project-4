@@ -86,7 +86,12 @@
     },
     {
       "parameters": {
-        "workflowId": "={{ \"tTHszjE5cqMyK1iF\" }}",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "tTHszjE5cqMyK1iF"
+        },
         "mode": "each",
         "options": {
           "waitForSubWorkflow": true
