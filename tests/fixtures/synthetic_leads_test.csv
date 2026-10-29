@@ -1,0 +1,7 @@
+business_name,website_url,country,industry,source,source_url,evidence_notes
+"[TEST-01] Valid Tech Corp",https://example.com,AR,Technology,CSV_IMPORT,https://test.zyrvae.internal/leads.csv,"Valid test lead with live responsive website"
+"[TEST-02] Broken Server SA",https://httpstat.us/503,CL,Retail,CSV_IMPORT,https://test.zyrvae.internal/leads.csv,"Controlled HTTP 503 error test"
+"[TEST-03] Malformed Lead",not-a-valid-domain,UY,Consulting,CSV_IMPORT,https://test.zyrvae.internal/leads.csv,"Malformed URL syntax test"
+"[TEST-04] Duplicate Tech Corp",https://example.com,AR,Technology,CSV_IMPORT,https://test.zyrvae.internal/leads.csv,"Duplicate of TEST-01 to test deduplication"
+"",,,,,"Empty row test"
+"[TEST-05] SSRF Trap Inc",http://127.0.0.1:8080/admin,MX,Security,CSV_IMPORT,https://test.zyrvae.internal/leads.csv,"Private IP SSRF security block test"
