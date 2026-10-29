@@ -66,13 +66,13 @@ flowchart TD
 | **Is Test Mode? (WF-01 Guard)** | `n8n-nodes-base.if` | Bifurca según `is_synthetic_test === true`. Impide estrictamente que datos de prueba alcancen a WF-01. |
 | **Mock WF-01 (Safe Synthetic)** | `n8n-nodes-base.code` | Genera un ID sintético no reutilizable `SYNTH-PROSPECT-{row}-{timestamp}-TESTONLY` sin invocar a WF-01 ni escribir en `prospects`. |
 | **Call WF-01 (Live Intake & Dedup)** | `n8n-nodes-base.executeWorkflow` | Invoca a WF-01 (`tTHszjE5cqMyK1iF`) **únicamente** cuando `is_synthetic_test === false`. |
-| **Process WF-01 Response** | `n8n-nodes-base.code` | Adaptador del contrato con WF-01: extrae el identificador estable `lead_key` del prospecto devuelto por WF-01, lo asigna a `prospect_id` y `lead_key`, y bloquea el uso de IDs sintéticos en producción. |
+| **Process WF-01 Response** | `n8n-nodes-base.code` | Adaptador del contrato con WF-01: extrae el identificador estable `lead_key` del prospecto devuelto por WF-01, lo asigna a `prospect_id` y `lead_key`, y bloquea el uso de IDs sintéticos en producción. Implementa política de 3 estados (prueba, real confirmado, desconocido para revisión) sin convertir la ausencia de indicador en false. |
 | **SSRF Security Filter** | `n8n-nodes-base.code` | **Obligatorio en ambas ramas**. Bloquea loopback (`127.0.0.1`, `::1`), privadas (`10.x`, `172.16-31.x`, `192.168.x`) y cloud metadata (`169.254.169.254`, `metadata.google.internal`). Exige `prospect_id` válido. |
 | **Is Target Safe?** | `n8n-nodes-base.if` | Desvía URLs privadas o inválidas a `Handle SSRF Block` sin emitir peticiones HTTP. |
 | **HTTP Website Audit** | `n8n-nodes-base.httpRequest` | Timeout 8.000 ms, máx. 5 redirecciones, headers corporativos estándar, `neverError: true`. |
-| **Extract Metadata & Facts** | `n8n-nodes-base.code` | Extracción HTML de Title, Meta Description, Viewport, SSL, accesibilidad, `redirect_count`, `response_time_ms` y categorización de hipótesis comerciales. |
+| **Extract Metadata & Facts** | `n8n-nodes-base.code` | Extracción HTML de Title, Meta Description, Viewport, SSL, accesibilidad, `redirect_count`, `response_time_ms` y categorización de hipótesis comerciales. Preserva la distinción de los 3 estados de trazabilidad y marca registros desconocidos con `requires_review: true`. |
 | **Handle SSRF Block** | `n8n-nodes-base.code` | Registro de evidencia de bloqueo por SSRF sin llamada de red. |
-| **Prepare Persistence Payload** | `n8n-nodes-base.code` | Mapeo al esquema estandarizado de `website_audits`. Clave de idempotencia determinista `aud_<stableHash(lead_key + ':' + url)>` en prod y `SYNTH-AUDIT-*-TESTONLY` en modo test. |
+| **Prepare Persistence Payload** | `n8n-nodes-base.code` | Mapeo al esquema estandarizado de `website_audits`. Clave de idempotencia determinista `aud_<stableHash(lead_key + ':' + url)>` en prod y `SYNTH-AUDIT-*-TESTONLY` en modo test. Mantiene `is_test_data` tri-estado (`true`, `false`, `null`) e identifica trazabilidad desconocida para revisión. |
 | **Is Test Mode? (Storage Guard)** | `n8n-nodes-base.if` | Bifurca según `is_synthetic_test === true`. Impide cualquier escritura en Data Tables durante la prueba. |
 | **Preview Test Audit (No Write)** | `n8n-nodes-base.code` | Terminal de prueba: expone el JSON completo en el panel de n8n para inspección con `_storage_status: 'DRY_RUN_NO_DATABASE_WRITE_PERFORMED'`. |
 | **Write to website_audits Table (Prod Only)** | `n8n-nodes-base.dataTable` | Terminal de producción: inserción/actualización (`upsert`) en la Data Table nativa de n8n `website_audits` (`dpLz1QDQU3l4GyrP`) con filtro en `audit_id` y `onError: continueErrorOutput`. |
@@ -106,17 +106,24 @@ flowchart TD
 | `meta_description`| `string` | Contenido de `<meta name="description">` | Opcional |
 | `error_code` | `string` | Código de error tipificado (`HTTP_ERROR_*`, `SSRF_BLOCKED`, etc.) | Opcional |
 | `commercial_hypotheses`| `string`| Array de oportunidades comerciales en formato JSON string | Requerido |
-| `raw_evidence` | `string` | Evidencia técnica objetiva en formato JSON string | Requerido |
-| `is_synthetic_test`| `boolean` | Flag de trazabilidad para aislar datos de prueba | Requerido |
+| `raw_evidence` | `string` | Evidencia técnica objetiva en formato JSON string (incluye trazabilidad de 3 estados y banderas de revisión) | Requerido |
+| `is_synthetic_test`| `boolean` | Flag de trazabilidad para aislar ejecuciones en modo sintético | Requerido |
+| `is_test_data` | `boolean` (nullable) | Estado de trazabilidad (`true`: dato de prueba, `false`: dato real explícitamente confirmado, `null`: trazabilidad desconocida identificada para revisión) | Tri-estado |
+
+### Política de Trazabilidad de 3 Estados:
+1. **Dato de prueba (`is_test_data: true`):** Prospectos con marca explícita de test o ejecutados en modo sintético.
+2. **Dato real explícitamente confirmado (`is_test_data: false`):** Prospectos con confirmación afirmativa de pertenecer a producción.
+3. **Trazabilidad desconocida (`is_test_data: null`):** Prospectos sin indicadores declarados y sin patrones de prueba. No se convierten automáticamente a `false` ni se asumen silenciosamente como producción; quedan identificados para revisión con `requires_review: true` y `traceability_status: 'UNKNOWN_TRACEABILITY'`.
 
 ---
 
 ## 5. Garantías de Seguridad y Verificación Topológica
 
-El test automatizado [`tests/test_workflow_topology.py`](file:///home/runner/work/my-project-4/my-project-4/tests/test_workflow_topology.py) verifica formalmente:
+El test automatizado [`tests/test_workflow_topology.py`](file:///home/runner/work/my-project-4/my-project-4/tests/test_workflow_topology.py) y [`tests/test_html_audit_and_traceability.py`](file:///home/runner/work/my-project-4/my-project-4/tests/test_html_audit_and_traceability.py) verifican formalmente:
 1. **0 caminos entre la rama sintética y WF-01:** La salida de prueba se conecta exclusivamente a `Mock WF-01`.
 2. **0 caminos entre la rama sintética y escrituras en tablas:** La salida de prueba se conecta exclusivamente a `Preview Test Audit (No Write)`.
 3. **Paso forzoso por el filtro SSRF:** Toda URL (mock o real) pasa obligatoriamente por `SSRF Security Filter` antes de alcanzar peticiones HTTP.
 4. **Validación estricta del contrato con WF-01:** El adaptador `Process WF-01 Response` extrae el `lead_key` estable y bloquea el uso de IDs sintéticos en producción.
-5. **Idempotencia y prevención de duplicados:** La clave `audit_id` es determinista para el par prospecto + URL, garantizando que reejecuciones actualicen el registro en lugar de generar duplicados.
-6. **Manejo explícito de errores de persistencia:** El nodo `Write to website_audits Table (Prod Only)` utiliza `onError: continueErrorOutput`, canalizando errores a `Handle Write Error` sin emitir falsos positivos.
+5. **Preservación estricta de la distinción de 3 estados:** En `Process WF-01 Response`, `Extract Metadata & Facts` y `Prepare Persistence Payload`, la ausencia de indicador no se convierte silenciosamente en `false`, garantizando que registros desconocidos queden marcados para revisión.
+6. **Idempotencia y prevención de duplicados:** La clave `audit_id` es determinista para el par prospecto + URL, garantizando que reejecuciones actualicen el registro en lugar de generar duplicados.
+7. **Manejo explícito de errores de persistencia:** El nodo `Write to website_audits Table (Prod Only)` utiliza `onError: continueErrorOutput`, canalizando errores a `Handle Write Error` sin emitir falsos positivos.

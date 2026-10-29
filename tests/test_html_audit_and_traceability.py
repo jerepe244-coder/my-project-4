@@ -33,6 +33,21 @@ class TestHtmlAuditAndTraceability(unittest.TestCase):
             cls.wf = json.load(f)
         cls.nodes_by_name = {n["name"]: n for n in cls.wf["nodes"]}
 
+    def _execute_process_wf01_node(self, wf01_response, prospect_data):
+        """Helper executing Process WF-01 Response inside isolated Node.js runtime."""
+        js_code = self.nodes_by_name["Process WF-01 Response"]["parameters"]["jsCode"]
+        wrapper = f"""
+const procFn = new Function('$input', '$', {json.dumps(js_code)});
+const itemInput = {{ item: {{ json: {json.dumps(wf01_response)} }} }};
+const prospectInput = {{ item: {{ json: {json.dumps(prospect_data)} }}, first: () => ({{ json: {json.dumps(prospect_data)} }}) }};
+const result = procFn(itemInput, () => prospectInput);
+console.log(JSON.stringify(result.json));
+"""
+        proc = subprocess.run(["node", "-e", wrapper], capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"Node execution error: {proc.stderr}")
+        return json.loads(proc.stdout)
+
     def _execute_extract_node(self, http_response, prospect_data):
         """Helper executing Extract Metadata & Facts inside isolated Node.js runtime."""
         js_code = self.nodes_by_name["Extract Metadata & Facts"]["parameters"]["jsCode"]
@@ -416,10 +431,11 @@ console.log(JSON.stringify(result.json));
         self.assertFalse(payload_res["is_test_data"])
         self.assertFalse(payload_res["is_synthetic_test"])
 
-    def test_traceability_case_e_missing_indicator_inferred_real_with_audit_trail(self):
+    def test_traceability_case_e_missing_indicator_identified_for_review_not_production(self):
         """
-        Prospecto sin indicadores booleanos pero sin ningún patrón de prueba:
-        Debe inferirse como real pero dejando constancia explícita en raw_evidence.traceability.
+        Prospecto sin indicadores booleanos y sin patrones de prueba:
+        NO debe tratarse silenciosamente como producción (is_test_data no debe ser false).
+        Debe quedar como is_test_data: None (null) e identificado explícitamente para revisión.
         """
         http_resp = {"statusCode": 200, "headers": {"content-type": "text/html"}, "data": "<html><title>Genuine Co</title></html>"}
         prospect = {
@@ -433,8 +449,205 @@ console.log(JSON.stringify(result.json));
         }
 
         extract_res = self._execute_extract_node(http_resp, prospect)
-        self.assertFalse(extract_res["is_test_data"])
-        self.assertEqual(extract_res["raw_evidence"]["traceability"]["detection_method"], "missing_indicator_inferred_real")
+        self.assertIsNone(extract_res["is_test_data"], "is_test_data no debe convertirse en false cuando la trazabilidad es desconocida")
+        self.assertEqual(extract_res["traceability_status"], "UNKNOWN_TRACEABILITY")
+        self.assertTrue(extract_res["requires_review"])
+        self.assertEqual(extract_res["raw_evidence"]["traceability"]["detection_method"], "unknown_traceability_requires_review")
+        self.assertTrue(extract_res["raw_evidence"]["traceability"]["requires_review"])
+        self.assertIsNotNone(extract_res["raw_evidence"]["traceability"]["review_reason"])
+
+        payload_res = self._execute_payload_node(extract_res)
+        self.assertIsNone(payload_res["is_test_data"], "Prepare Persistence Payload debe emitir is_test_data: null")
+        self.assertEqual(payload_res["traceability_status"], "UNKNOWN_TRACEABILITY")
+        self.assertTrue(payload_res["requires_review"])
+
+    # --------------------------------------------------------------------------
+    # 3. Isolated Tests for the 3 States (Dato Prueba, Confirmado Real, Desconocido)
+    # --------------------------------------------------------------------------
+
+    def test_isolated_three_states_in_process_wf01_response(self):
+        """
+        Pruebas aisladas en Process WF-01 Response para los 3 estados:
+        Estado 1: Dato de prueba (is_test_data: true o is_synthetic_test: true)
+        Estado 2: Dato real explícitamente confirmado (is_test_data: false)
+        Estado 3: Trazabilidad desconocida (ausencia de is_test_data) -> null, no false
+        """
+        loop_prospect_base = {
+            "row_index": 1,
+            "business_name": "ACME Industrial Corp",
+            "website_url": "https://acme-industrial.com"
+        }
+
+        # Estado 1: Dato de prueba (explícito)
+        wf01_test = {"records": [{"lead_key": "dom:acme-industrial.com", "is_test_data": True}]}
+        res1 = self._execute_process_wf01_node(wf01_test, {**loop_prospect_base, "is_synthetic_test": False})
+        self.assertTrue(res1["is_test_data"], "Estado 1: is_test_data debe ser true")
+        self.assertEqual(res1["traceability_status"], "TEST_DATA")
+        self.assertFalse(res1["requires_review"])
+
+        # Estado 2: Dato real explícitamente confirmado
+        wf01_real = {"records": [{"lead_key": "dom:acme-industrial.com", "is_test_data": False}]}
+        res2 = self._execute_process_wf01_node(wf01_real, {**loop_prospect_base, "is_synthetic_test": False})
+        self.assertFalse(res2["is_test_data"], "Estado 2: is_test_data debe ser false")
+        self.assertEqual(res2["traceability_status"], "CONFIRMED_REAL")
+        self.assertFalse(res2["requires_review"])
+
+        # Estado 3: Trazabilidad desconocida (ausencia de is_test_data en prospect y WF-01)
+        wf01_unknown = {"records": [{"lead_key": "dom:acme-industrial.com"}]}
+        res3 = self._execute_process_wf01_node(wf01_unknown, {**loop_prospect_base, "is_synthetic_test": False})
+        self.assertIsNone(res3["is_test_data"], "Estado 3: Ausencia de is_test_data NO debe convertirse en false")
+        self.assertEqual(res3["traceability_status"], "UNKNOWN_TRACEABILITY")
+        self.assertTrue(res3["requires_review"], "Estado 3: Debe marcarse para revisión")
+
+    def test_isolated_three_states_in_extract_metadata(self):
+        """
+        Pruebas aisladas en Extract Metadata & Facts para los 3 estados:
+        Verifica preservación de banderas, detection_method y estado de revisión.
+        """
+        http_resp = {
+            "statusCode": 200,
+            "headers": {"content-type": "text/html"},
+            "data": "<html><title>Test Site</title><body>Hello</body></html>"
+        }
+
+        # Estado 1: Dato de prueba
+        prospect_test = {
+            "prospect_id": "dom:site.com",
+            "lead_key": "dom:site.com",
+            "audit_target_url": "https://site.com",
+            "is_test_data": True,
+            "is_synthetic_test": False
+        }
+        res1 = self._execute_extract_node(http_resp, prospect_test)
+        self.assertTrue(res1["is_test_data"])
+        self.assertEqual(res1["traceability_status"], "TEST_DATA")
+        self.assertEqual(res1["raw_evidence"]["traceability"]["detection_method"], "explicit_flag")
+        self.assertFalse(res1["requires_review"])
+
+        # Estado 2: Dato real explícitamente confirmado
+        prospect_real = {
+            "prospect_id": "dom:site.com",
+            "lead_key": "dom:site.com",
+            "audit_target_url": "https://site.com",
+            "is_test_data": False,
+            "is_synthetic_test": False
+        }
+        res2 = self._execute_extract_node(http_resp, prospect_real)
+        self.assertFalse(res2["is_test_data"])
+        self.assertEqual(res2["traceability_status"], "CONFIRMED_REAL")
+        self.assertEqual(res2["raw_evidence"]["traceability"]["detection_method"], "explicit_real")
+        self.assertFalse(res2["requires_review"])
+
+        # Estado 3: Trazabilidad desconocida
+        prospect_unknown = {
+            "prospect_id": "dom:site.com",
+            "lead_key": "dom:site.com",
+            "audit_target_url": "https://site.com",
+            "business_name": "Ordinary Commercial Store",
+            "is_test_data": None,
+            "is_synthetic_test": False
+        }
+        res3 = self._execute_extract_node(http_resp, prospect_unknown)
+        self.assertIsNone(res3["is_test_data"], "Extract no debe convertir trazabilidad desconocida en false")
+        self.assertEqual(res3["traceability_status"], "UNKNOWN_TRACEABILITY")
+        self.assertEqual(res3["raw_evidence"]["traceability"]["detection_method"], "unknown_traceability_requires_review")
+        self.assertTrue(res3["requires_review"])
+
+    def test_isolated_three_states_in_prepare_persistence_payload(self):
+        """
+        Pruebas aisladas en Prepare Persistence Payload para los 3 estados:
+        Verifica el valor final de is_test_data (true, false, null) antes de entrar a website_audits.
+        """
+        base_audit = {
+            "prospect_id": "dom:audit-site.com",
+            "lead_key": "dom:audit-site.com",
+            "initial_url": "https://audit-site.com",
+            "http_status": 200,
+            "is_synthetic_test": False
+        }
+
+        # Estado 1: Dato de prueba
+        payload1 = self._execute_payload_node({**base_audit, "is_test_data": True})
+        self.assertTrue(payload1["is_test_data"])
+        self.assertEqual(payload1["traceability_status"], "TEST_DATA")
+        self.assertFalse(payload1["requires_review"])
+
+        # Estado 2: Dato real explícitamente confirmado
+        payload2 = self._execute_payload_node({**base_audit, "is_test_data": False})
+        self.assertFalse(payload2["is_test_data"])
+        self.assertEqual(payload2["traceability_status"], "CONFIRMED_REAL")
+        self.assertFalse(payload2["requires_review"])
+
+        # Estado 3: Trazabilidad desconocida
+        payload3 = self._execute_payload_node({**base_audit, "is_test_data": None})
+        self.assertIsNone(payload3["is_test_data"], "Persistence payload debe emitir null, no false")
+        self.assertEqual(payload3["traceability_status"], "UNKNOWN_TRACEABILITY")
+        self.assertTrue(payload3["requires_review"])
+
+        raw_ev = json.loads(payload3["raw_evidence"])
+        self.assertIsNone(raw_ev["traceability"]["is_test_data"])
+        self.assertEqual(raw_ev["traceability"]["traceability_status"], "UNKNOWN_TRACEABILITY")
+        self.assertTrue(raw_ev["traceability"]["requires_review"])
+
+    def test_end_to_end_traceability_consistency_across_pipeline(self):
+        """
+        Verificación de consistencia integral de extremo a extremo:
+        Process WF-01 Response -> Extract Metadata -> Prepare Persistence Payload.
+        Asegura que la trazabilidad desconocida nunca sea tratada silenciosamente como producción.
+        """
+        http_resp = {
+            "statusCode": 200,
+            "headers": {"content-type": "text/html"},
+            "data": "<!doctype html><html><head><title>E2E Check</title></head><body>E2E</body></html>"
+        }
+
+        scenarios = [
+            # (name, wf01_record, loop_prospect, expected_is_test_data, expected_status, expected_review)
+            (
+                "Estado 1 (Prueba)",
+                {"lead_key": "dom:test-corp.com", "is_test_data": True},
+                {"business_name": "Test Corp", "website_url": "https://test-corp.com", "is_synthetic_test": False},
+                True,
+                "TEST_DATA",
+                False
+            ),
+            (
+                "Estado 2 (Real confirmado)",
+                {"lead_key": "dom:confirmed-real.com", "is_test_data": False},
+                {"business_name": "Confirmed Real SA", "website_url": "https://confirmed-real.com", "is_synthetic_test": False},
+                False,
+                "CONFIRMED_REAL",
+                False
+            ),
+            (
+                "Estado 3 (Trazabilidad desconocida)",
+                {"lead_key": "dom:untracked-entity.org"},
+                {"business_name": "Untracked Entity Org", "website_url": "https://untracked-entity.org", "is_synthetic_test": False},
+                None,
+                "UNKNOWN_TRACEABILITY",
+                True
+            )
+        ]
+
+        for name, wf01_rec, prospect, exp_test, exp_status, exp_review in scenarios:
+            with self.subTest(scenario=name):
+                # 1. Process WF-01 Response
+                proc_out = self._execute_process_wf01_node({"records": [wf01_rec]}, prospect)
+                self.assertEqual(proc_out["is_test_data"], exp_test, f"{name}: Falló en Process WF-01 Response")
+                self.assertEqual(proc_out["traceability_status"], exp_status)
+                self.assertEqual(proc_out["requires_review"], exp_review)
+
+                # 2. Extract Metadata & Facts
+                extract_out = self._execute_extract_node(http_resp, proc_out)
+                self.assertEqual(extract_out["is_test_data"], exp_test, f"{name}: Falló en Extract Metadata & Facts")
+                self.assertEqual(extract_out["traceability_status"], exp_status)
+                self.assertEqual(extract_out["requires_review"], exp_review)
+
+                # 3. Prepare Persistence Payload
+                payload_out = self._execute_payload_node(extract_out)
+                self.assertEqual(payload_out["is_test_data"], exp_test, f"{name}: Falló en Prepare Persistence Payload")
+                self.assertEqual(payload_out["traceability_status"], exp_status)
+                self.assertEqual(payload_out["requires_review"], exp_review)
 
 
 if __name__ == "__main__":

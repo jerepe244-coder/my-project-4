@@ -340,6 +340,18 @@
       "created_at": "2026-10-29T19:29:24.172Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "e5007361-05ca-4bd1-a52e-403b84fab89f",
+      "role": "user",
+      "content": "Ajuste puntual antes de cerrar WF-02: en Process WF-01 Response, no conviertas automáticamente la ausencia de is_test_data en false. Conservá la distinción entre dato de prueba, dato real explícitamente confirmado y trazabilidad desconocida. Los registros con trazabilidad desconocida deben quedar identificados para revisión y no tratarse silenciosamente como producción. Asegurá que la política sea consistente hasta website_audits y agregá pruebas aisladas para los tres estados. No repitas la prueba de producción, no borres ni alteres registros existentes y mantené ambos workflows inactivos con RUN_SYNTHETIC_TEST = true. Informá únicamente el cambio realizado y los resultados de esas pruebas.",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-10-29T19:43:33.941Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }

@@ -171,7 +171,7 @@ const nodesByName = Object.fromEntries(wf.nodes.map(n => [n.name, n]));
 
 const procFn = new Function('$input', '$', nodesByName['Process WF-01 Response'].parameters.jsCode);
 
-// Caso 1: Payload real devuelto por WF-01
+// Caso 1: Payload real devuelto por WF-01 (con trazabilidad desconocida / indicador ausente)
 const mockWf01Output = {
   summary: { input_records_received: 1, inserted: 1, validated: 1 },
   errors: [],
@@ -201,6 +201,29 @@ if (res.json.prospect_id !== 'dom:acme-corp.com') throw new Error('ID estable no
 if (res.json.lead_key !== 'dom:acme-corp.com') throw new Error('lead_key no mapeado');
 if (res.json.prospect_id.includes('SYNTH')) throw new Error('ID sintético usado en producción');
 if (res.json.wf01_executed_live !== true) throw new Error('Flag de ejecución en vivo incorrecto');
+// Verificación de los 3 estados en Process WF-01 Response:
+// Estado 3: Ausencia de is_test_data no debe convertirse en false
+if (res.json.is_test_data !== null) throw new Error('is_test_data no debe ser false ante indicador ausente: ' + res.json.is_test_data);
+if (res.json.traceability_status !== 'UNKNOWN_TRACEABILITY') throw new Error('traceability_status incorrecto: ' + res.json.traceability_status);
+if (res.json.requires_review !== true) throw new Error('requires_review debe ser true');
+
+// Estado 1: Test Data explícito
+const resTestData = procFn(
+  { item: { json: { records: [{ lead_key: 'dom:test-corp.com', is_test_data: true }] } } },
+  () => ({ item: loopProspect, first: () => loopProspect })
+);
+if (resTestData.json.is_test_data !== true) throw new Error('Dato de prueba no preservado como true');
+if (resTestData.json.traceability_status !== 'TEST_DATA') throw new Error('Estado de trazabilidad no es TEST_DATA');
+if (resTestData.json.requires_review !== false) throw new Error('requires_review no debe ser true para dato de prueba');
+
+// Estado 2: Confirmed Real explícito
+const resRealData = procFn(
+  { item: { json: { records: [{ lead_key: 'dom:real-corp.com', is_test_data: false }] } } },
+  () => ({ item: loopProspect, first: () => loopProspect })
+);
+if (resRealData.json.is_test_data !== false) throw new Error('Dato real no preservado como false');
+if (resRealData.json.traceability_status !== 'CONFIRMED_REAL') throw new Error('Estado de trazabilidad no es CONFIRMED_REAL');
+if (resRealData.json.requires_review !== false) throw new Error('requires_review no debe ser true para dato real confirmado');
 
 // Caso 2: Payload sin lead_key -> debe arrojar excepción de contrato
 let threw = false;
@@ -232,7 +255,7 @@ const nodesByName = Object.fromEntries(wf.nodes.map(n => [n.name, n]));
 
 const payloadFn = new Function('$input', nodesByName['Prepare Persistence Payload'].parameters.jsCode);
 
-// Producción: dos ejecuciones del mismo prospecto y URL
+// Producción: dos ejecuciones del mismo prospecto y URL (confirmado real)
 const auditItem1 = {
   prospect_id: 'dom:acme-corp.com',
   lead_key: 'dom:acme-corp.com',
@@ -249,7 +272,8 @@ const auditItem1 = {
   error_code: null,
   raw_evidence: { status_code: 200 },
   commercial_hypotheses: [],
-  is_synthetic_test: false
+  is_synthetic_test: false,
+  is_test_data: false
 };
 
 const res1 = payloadFn({ item: { json: auditItem1 } });
@@ -269,6 +293,22 @@ const resSynth = payloadFn({ item: { json: synthItem } });
 if (!resSynth.json.audit_id.includes('TESTONLY')) {
   throw new Error('audit_id sintético no contiene TESTONLY: ' + resSynth.json.audit_id);
 }
+if (resSynth.json.is_test_data !== true) {
+  throw new Error('is_test_data sintético debe ser true');
+}
+
+// Caso trazabilidad desconocida: no asumir false, identificar para revisión
+const unknownItem = { ...auditItem1, is_test_data: null };
+const resUnknown = payloadFn({ item: { json: unknownItem } });
+if (resUnknown.json.is_test_data !== null) {
+  throw new Error('is_test_data desconocido no debe ser false: ' + resUnknown.json.is_test_data);
+}
+if (resUnknown.json.traceability_status !== 'UNKNOWN_TRACEABILITY') {
+  throw new Error('traceability_status debe ser UNKNOWN_TRACEABILITY');
+}
+if (resUnknown.json.requires_review !== true) {
+  throw new Error('requires_review debe ser true');
+}
 
 // Validación de tipos
 if (typeof res1.json.audit_date !== 'string') throw new Error('audit_date no es ISO string');
@@ -276,7 +316,7 @@ if (typeof res1.json.redirect_count !== 'number') throw new Error('redirect_coun
 if (typeof res1.json.response_time_ms !== 'number') throw new Error('response_time_ms no es número');
 if (typeof res1.json.raw_evidence !== 'string') throw new Error('raw_evidence debe serializarse a string JSON');
 if (typeof res1.json.commercial_hypotheses !== 'string') throw new Error('commercial_hypotheses debe serializarse a string JSON');
-if (typeof res1.json.is_test_data !== 'boolean') throw new Error('is_test_data debe ser booleano');
+if (typeof res1.json.is_test_data !== 'boolean' && res1.json.is_test_data !== null) throw new Error('is_test_data debe ser booleano o null');
 if (typeof res1.json.is_synthetic_test !== 'boolean') throw new Error('is_synthetic_test debe ser booleano');
 
 console.log('Idempotency & Schema OK');
