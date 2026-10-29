@@ -217,30 +217,58 @@ def audit_website(url: str) -> Dict:
             except Exception:
                 html_text = ""
 
-            # Extracción objetiva de metadatos HTML
-            title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
-            title = title_match.group(1).strip() if title_match else None
+            # Criterios de verificabilidad de HTML
+            is_non_empty = bool(html_text.strip())
+            content_type_lower = content_type.lower()
+            has_html_content_type = "text/html" in content_type_lower or "application/xhtml" in content_type_lower
+            has_html_markers = bool(re.search(r"<(?:!doctype\s+html|html|head|body)[\s>]", html_text, re.IGNORECASE))
+            is_explicit_non_html = any(t in content_type_lower for t in ["application/json", "image/", "application/pdf"])
+            is_html_response = (has_html_content_type or has_html_markers) and not is_explicit_non_html
+            is_html_analyzable = is_non_empty and is_html_response
 
-            meta_desc_match = re.search(
-                r'<meta[^>]+name=[\'"]description[\'"][^>]+content=[\'"](.*?)[\'"]',
-                html_text,
-                re.IGNORECASE
-            ) or re.search(
-                r'<meta[^>]+content=[\'"](.*?)[\'"][^>]+name=[\'"]description[\'"]',
-                html_text,
-                re.IGNORECASE
-            )
-            meta_description = meta_desc_match.group(1).strip() if meta_desc_match else None
+            viewport_status = "UNVERIFIABLE"
+            meta_desc_status = "UNVERIFIABLE"
+            title_status = "UNVERIFIABLE"
+            has_viewport = False
+            title = None
+            meta_description = None
 
-            viewport_match = re.search(
-                r'<meta[^>]+name=[\'"]viewport[\'"]',
-                html_text,
-                re.IGNORECASE
-            )
-            has_viewport = bool(viewport_match)
+            if is_html_analyzable:
+                viewport_match = re.search(r'<meta[^>]+name\s*=\s*[\'"]?viewport[\'"]?', html_text, re.IGNORECASE)
+                if viewport_match:
+                    viewport_status = "FOUND"
+                    has_viewport = True
+                else:
+                    viewport_status = "PROVEN_ABSENT"
+                    has_viewport = False
+
+                title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
+                if title_match and title_match.group(1).strip():
+                    title_status = "FOUND"
+                    title = title_match.group(1).strip()
+                else:
+                    title_status = "PROVEN_ABSENT"
+                    title = ""
+
+                meta_desc_match = re.search(
+                    r'<meta[^>]+name\s*=\s*[\'"]?description[\'"]?[^>]+content\s*=\s*[\'"](.*?)[\'"]',
+                    html_text,
+                    re.IGNORECASE
+                ) or re.search(
+                    r'<meta[^>]+content\s*=\s*[\'"](.*?)[\'"][^>]+name\s*=\s*[\'"]?description[\'"]?',
+                    html_text,
+                    re.IGNORECASE
+                )
+                if meta_desc_match and meta_desc_match.group(1).strip():
+                    meta_desc_status = "FOUND"
+                    meta_description = meta_desc_match.group(1).strip()
+                else:
+                    meta_desc_status = "PROVEN_ABSENT"
+                    meta_description = ""
+
             ssl_active = final_url.startswith("https://")
 
-            # Construir hipótesis comerciales basadas estrictamente en hechos
+            # Construir hipótesis comerciales basadas estrictamente en hechos comprobables
             hypotheses = []
             if not ssl_active:
                 hypotheses.append({
@@ -248,13 +276,13 @@ def audit_website(url: str) -> Dict:
                     "evidence": "Sitio web no redirige a HTTPS o opera sobre HTTP plano",
                     "opportunity": "Servicio de securización web, migración a certificado SSL y confianza digital"
                 })
-            if not has_viewport:
+            if is_html_analyzable and viewport_status == "PROVEN_ABSENT":
                 hypotheses.append({
                     "category": "MOBILE_RESPONSIVE",
                     "evidence": "Falta etiqueta meta viewport para renderizado responsivo",
                     "opportunity": "Modernización de diseño y optimización de experiencia móvil (Responsive Web Design)"
                 })
-            if not meta_description:
+            if is_html_analyzable and meta_desc_status == "PROVEN_ABSENT":
                 hypotheses.append({
                     "category": "SEO_ONPAGE",
                     "evidence": "Sitio web sin meta description declarada en HTML",
@@ -266,6 +294,12 @@ def audit_website(url: str) -> Dict:
                     "evidence": f"Tiempo de respuesta inicial elevado ({latency_ms} ms)",
                     "opportunity": "Optimización de velocidad de carga, compresión y CDN"
                 })
+
+            unanalyzable_reason = None
+            if not is_non_empty:
+                unanalyzable_reason = "empty_body"
+            elif not is_html_response:
+                unanalyzable_reason = "non_html_response"
 
             return {
                 "initial_url": url,
@@ -283,6 +317,13 @@ def audit_website(url: str) -> Dict:
                 "raw_evidence": {
                     "content_type": content_type,
                     "body_size_bytes": len(raw_body),
+                    "analysis_verifiable": is_html_analyzable,
+                    "unverifiable_reason": unanalyzable_reason,
+                    "feature_status": {
+                        "viewport": viewport_status,
+                        "meta_description": meta_desc_status,
+                        "page_title": title_status
+                    },
                     "headers_summary": {k: response.headers.get(k) for k in ["Server", "Content-Type", "Strict-Transport-Security"] if k in response.headers}
                 }
             }

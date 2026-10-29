@@ -276,6 +276,8 @@ if (typeof res1.json.redirect_count !== 'number') throw new Error('redirect_coun
 if (typeof res1.json.response_time_ms !== 'number') throw new Error('response_time_ms no es número');
 if (typeof res1.json.raw_evidence !== 'string') throw new Error('raw_evidence debe serializarse a string JSON');
 if (typeof res1.json.commercial_hypotheses !== 'string') throw new Error('commercial_hypotheses debe serializarse a string JSON');
+if (typeof res1.json.is_test_data !== 'boolean') throw new Error('is_test_data debe ser booleano');
+if (typeof res1.json.is_synthetic_test !== 'boolean') throw new Error('is_synthetic_test debe ser booleano');
 
 console.log('Idempotency & Schema OK');
 """
@@ -306,6 +308,11 @@ console.log('Idempotency & Schema OK');
         # Verificar filtro en audit_id
         conditions = params.get("filters", {}).get("conditions", [])
         self.assertTrue(any(c.get("keyName") == "audit_id" for c in conditions), "Filtro upsert debe usar audit_id")
+
+        # Verificar mapeo de columnas para trazabilidad de prueba
+        col_mappings = params.get("columns", {}).get("value", {})
+        self.assertEqual(col_mappings.get("is_test_data"), "={{ $json.is_test_data }}")
+        self.assertEqual(col_mappings.get("is_synthetic_test"), "={{ $json.is_synthetic_test }}")
 
         # Conexiones de salida
         write_conns = self.connections.get("Write to website_audits Table (Prod Only)", {}).get("main", [])
