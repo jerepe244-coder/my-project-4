@@ -1,5 +1,5 @@
 {
-  "name": "ZYRVAE WF-02 — CSV Lead Import & Website Audit",
+  "name": "ZYRVAE WF-02 \u2014 CSV Lead Import & Website Audit",
   "nodes": [
     {
       "parameters": {},
@@ -7,55 +7,82 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [160, 300]
+      "position": [
+        160,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// ZYRVAE WF-02: Control de Modo y Parsing de Entrada\n// ==============================================================================\n// MODO PREDETERMINADO: PRUEBA AISLADA (Seguridad estricta)\n// true  = Ejecuta prueba sintética aislada (omite WF-01 y Data Tables por completo)\n// false = Modo Producción (exige archivo CSV binario y escribe en producción)\nconst RUN_SYNTHETIC_TEST = true;\n\nconst items = $input.all();\nconst ALLOWED_HEADERS = new Set([\n  'business_name',\n  'website_url',\n  'country',\n  'industry',\n  'source',\n  'source_url',\n  'evidence_notes'\n]);\n\nlet csvText = '';\nlet isSyntheticTest = RUN_SYNTHETIC_TEST;\n\n// Si el modo sintético está activo por defecto, carga lote de prueba aislado\nif (isSyntheticTest) {\n  csvText = `business_name,website_url,country,industry,source,source_url,evidence_notes\n\"[TEST-01] Valid Tech Corp\",https://example.com,AR,Technology,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"Valid test lead\"\n\"[TEST-02] Broken Server SA\",https://httpbin.org/status/503,CL,Retail,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"HTTP 503 test\"\n\"[TEST-03] Malformed Lead\",not-a-valid-domain,UY,Consulting,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"Malformed URL\"\n\"[TEST-04] Duplicate Tech Corp\",https://example.com,AR,Technology,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"Duplicate test\"\n\"\",,,,,\"Empty row test\"\n\"[TEST-05] SSRF Trap Inc\",http://127.0.0.1:8080/admin,MX,Security,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"SSRF test\"`;\n} else {\n  // Modo Producción: requiere archivo binario cargado\n  if (items[0] && items[0].binary) {\n    const binKeys = Object.keys(items[0].binary);\n    if (binKeys.length > 0 && items[0].binary[binKeys[0]].data) {\n      csvText = Buffer.from(items[0].binary[binKeys[0]].data, 'base64').toString('utf8');\n    }\n  } else if (items[0] && items[0].json && typeof items[0].json.csv_data === 'string' && items[0].json.csv_data.trim()) {\n    csvText = items[0].json.csv_data.trim();\n  } else {\n    throw new Error(\n      'ZYRVAE WF-02 (Producción): No se detectó ningún archivo CSV binario ni contenido en csv_data. ' +\n      'Para procesar datos reales, adjunte un archivo CSV. ' +\n      'Para pruebas seguras, active RUN_SYNTHETIC_TEST = true en el código.'\n    );\n  }\n}\n\n// Función de parsing CSV robusta con soporte para comillas y comas internas\nfunction parseCSV(text) {\n  const lines = text.split(/\\r?\\n/).filter(line => line.trim().length > 0);\n  if (lines.length === 0) return { headers: [], rows: [] };\n  \n  function splitRow(rowStr) {\n    const regex = /(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|([^,]+)|(?=,))(?:,|$)/g;\n    const result = [];\n    let match;\n    while ((match = regex.exec(rowStr)) !== null) {\n      if (match.index === regex.lastIndex) regex.lastIndex++;\n      let val = match[1] !== undefined ? match[1].replace(/\"\"/g, '\"') : (match[2] !== undefined ? match[2] : '');\n      result.push(val.trim());\n      if (regex.lastIndex >= rowStr.length && rowStr.endsWith(',')) {\n        result.push('');\n        break;\n      }\n    }\n    return result;\n  }\n\n  const rawHeaders = splitRow(lines[0]).map(h => h.toLowerCase().trim());\n  const rows = [];\n  for (let i = 1; i < lines.length; i++) {\n    const values = splitRow(lines[i]);\n    const rowObj = {};\n    rawHeaders.forEach((h, idx) => {\n      rowObj[h] = values[idx] || '';\n    });\n    rows.push({ rowIndex: i + 1, data: rowObj });\n  }\n  return { headers: rawHeaders, rows };\n}\n\nconst parsed = parseCSV(csvText);\nconst validProspects = [];\nconst skippedErrors = [];\nconst seenUrls = new Set();\n\nfor (const row of parsed.rows) {\n  const bName = (row.data.business_name || '').trim();\n  let wUrl = (row.data.website_url || '').trim();\n  \n  if (!bName && !wUrl) {\n    skippedErrors.push({ row: row.rowIndex, error: 'EMPTY_ROW', reason: 'Fila sin nombre ni web', raw: row.data });\n    continue;\n  }\n  if (!bName) {\n    skippedErrors.push({ row: row.rowIndex, error: 'MISSING_BUSINESS_NAME', reason: 'Nombre de empresa ausente', raw: row.data });\n    continue;\n  }\n  if (wUrl) {\n    if (!wUrl.startsWith('http://') && !wUrl.startsWith('https://')) {\n      if (wUrl.includes('.') && !wUrl.includes(' ')) {\n        wUrl = 'https://' + wUrl;\n      } else {\n        skippedErrors.push({ row: row.rowIndex, error: 'INVALID_URL_SYNTAX', reason: 'Sintaxis de URL inválida', raw: row.data });\n        continue;\n      }\n    }\n  }\n  \n  const normUrl = wUrl.toLowerCase().replace(/\\/+$/, '');\n  if (normUrl && seenUrls.has(normUrl)) {\n    skippedErrors.push({ row: row.rowIndex, error: 'IN_BATCH_DUPLICATE', reason: 'URL duplicada dentro del archivo CSV', raw: row.data });\n    continue;\n  }\n  if (normUrl) seenUrls.add(normUrl);\n  \n  validProspects.push({\n    json: {\n      row_index: row.rowIndex,\n      business_name: bName,\n      website_url: wUrl,\n      country: (row.data.country || '').trim(),\n      industry: (row.data.industry || '').trim(),\n      source: (row.data.source || (isSyntheticTest ? 'CSV_TEST' : 'CSV_IMPORT')).trim(),\n      source_url: (row.data.source_url || '').trim(),\n      evidence_notes: (row.data.evidence_notes || '').trim(),\n      is_synthetic_test: isSyntheticTest,\n      batch_id: $execution.id || 'manual-batch'\n    }\n  });\n}\n\nreturn validProspects;"
+        "jsCode": "// ==============================================================================\n// ZYRVAE WF-02: Control de Modo y Parsing de Entrada\n// ==============================================================================\n// MODO PREDETERMINADO: PRUEBA AISLADA (Seguridad estricta)\n// true  = Ejecuta prueba sint\u00e9tica aislada (omite WF-01 y Data Tables por completo)\n// false = Modo Producci\u00f3n (exige archivo CSV binario y escribe en producci\u00f3n)\nconst RUN_SYNTHETIC_TEST = true;\n\nconst items = $input.all();\nlet csvText = '';\nlet isSyntheticTest = RUN_SYNTHETIC_TEST;\n\nif (isSyntheticTest) {\n  csvText = `business_name,website_url,country,industry,source,source_url,evidence_notes\n\"[TEST-01] Valid Tech Corp\",https://example.com,AR,Technology,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"Valid test lead\"\n\"[TEST-02] Broken Server SA\",https://httpbin.org/status/503,CL,Retail,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"HTTP 503 test\"\n\"[TEST-03] Malformed Lead\",not-a-valid-domain,UY,Consulting,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"Malformed URL\"\n\"[TEST-04] Duplicate Tech Corp\",https://example.com,AR,Technology,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"Duplicate test\"\n\"\",,,,,\"Empty row test\"\n\"[TEST-05] SSRF Trap Inc\",http://127.0.0.1:8080/admin,MX,Security,CSV_TEST,https://test.zyrvae.internal/leads.csv,\"SSRF test\"`;\n} else {\n  if (items[0] && items[0].binary) {\n    const binKeys = Object.keys(items[0].binary);\n    if (binKeys.length > 0 && items[0].binary[binKeys[0]].data) {\n      csvText = Buffer.from(items[0].binary[binKeys[0]].data, 'base64').toString('utf8');\n    }\n  } else if (items[0] && items[0].json && typeof items[0].json.csv_data === 'string' && items[0].json.csv_data.trim()) {\n    csvText = items[0].json.csv_data.trim();\n  } else {\n    throw new Error(\n      'ZYRVAE WF-02 (Producci\u00f3n): No se detect\u00f3 ning\u00fan archivo CSV binario ni contenido en csv_data. ' +\n      'Para procesar datos reales, adjunte un archivo CSV. ' +\n      'Para pruebas seguras, active RUN_SYNTHETIC_TEST = true en el c\u00f3digo.'\n    );\n  }\n}\n\nfunction parseCSV(text) {\n  const lines = text.split(/\\r?\\n/).filter(line => line.trim().length > 0);\n  if (lines.length === 0) return { headers: [], rows: [] };\n  \n  function splitRow(rowStr) {\n    const regex = /(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|([^,]+)|(?=,))(?:,|$)/g;\n    const result = [];\n    let match;\n    while ((match = regex.exec(rowStr)) !== null) {\n      if (match.index === regex.lastIndex) regex.lastIndex++;\n      let val = match[1] !== undefined ? match[1].replace(/\"\"/g, '\"') : (match[2] !== undefined ? match[2] : '');\n      result.push(val.trim());\n      if (regex.lastIndex >= rowStr.length && rowStr.endsWith(',')) {\n        result.push('');\n        break;\n      }\n    }\n    return result;\n  }\n\n  const rawHeaders = splitRow(lines[0]).map(h => h.toLowerCase().trim());\n  const rows = [];\n  for (let i = 1; i < lines.length; i++) {\n    const values = splitRow(lines[i]);\n    const rowObj = {};\n    rawHeaders.forEach((h, idx) => {\n      rowObj[h] = values[idx] || '';\n    });\n    rows.push({ rowIndex: i + 1, data: rowObj });\n  }\n  return { headers: rawHeaders, rows };\n}\n\nconst parsed = parseCSV(csvText);\nconst validProspects = [];\nconst skippedErrors = [];\nconst seenUrls = new Set();\n\nfor (const row of parsed.rows) {\n  const bName = (row.data.business_name || '').trim();\n  let wUrl = (row.data.website_url || '').trim();\n  \n  if (!bName && !wUrl) {\n    skippedErrors.push({ row: row.rowIndex, error: 'EMPTY_ROW', reason: 'Fila sin nombre ni web', raw: row.data });\n    continue;\n  }\n  if (!bName) {\n    skippedErrors.push({ row: row.rowIndex, error: 'MISSING_BUSINESS_NAME', reason: 'Nombre de empresa ausente', raw: row.data });\n    continue;\n  }\n  if (wUrl) {\n    if (!wUrl.startsWith('http://') && !wUrl.startsWith('https://')) {\n      if (wUrl.includes('.') && !wUrl.includes(' ')) {\n        wUrl = 'https://' + wUrl;\n      } else {\n        skippedErrors.push({ row: row.rowIndex, error: 'INVALID_URL_SYNTAX', reason: 'Sintaxis de URL inv\u00e1lida', raw: row.data });\n        continue;\n      }\n    }\n  }\n  \n  const normUrl = wUrl.toLowerCase().replace(/\\/+$/, '');\n  if (normUrl && seenUrls.has(normUrl)) {\n    skippedErrors.push({ row: row.rowIndex, error: 'IN_BATCH_DUPLICATE', reason: 'URL duplicada dentro del archivo CSV', raw: row.data });\n    continue;\n  }\n  if (normUrl) seenUrls.add(normUrl);\n  \n  validProspects.push({\n    json: {\n      row_index: row.rowIndex,\n      business_name: bName,\n      website_url: wUrl,\n      country: (row.data.country || '').trim(),\n      industry: (row.data.industry || '').trim(),\n      source: (row.data.source || (isSyntheticTest ? 'CSV_TEST' : 'CSV_IMPORT')).trim(),\n      source_url: (row.data.source_url || '').trim(),\n      evidence_notes: (row.data.evidence_notes || '').trim(),\n      is_synthetic_test: isSyntheticTest,\n      batch_id: $execution.id || 'manual-batch'\n    }\n  });\n}\n\nreturn validProspects;"
       },
-      "id": "e0000001-0001-4000-8000-000000000002",
+      "id": "e0000002-0002-4000-8000-000000000002",
       "name": "Parse & Validate CSV",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [380, 300]
+      "position": [
+        380,
+        300
+      ]
     },
     {
       "parameters": {
         "batchSize": 1,
         "options": {}
       },
-      "id": "e0000001-0001-4000-8000-000000000003",
+      "id": "e0000003-0003-4000-8000-000000000003",
       "name": "Loop Over Prospects (Sequential)",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [600, 300]
+      "position": [
+        640,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.is_synthetic_test }}",
-              "value2": true
+              "id": "guard-condition-wf01",
+              "leftValue": "={{ $json.is_synthetic_test }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "e0000001-0001-4000-8000-000000000004",
+      "id": "e0000004-0004-4000-8000-000000000004",
       "name": "Is Test Mode? (WF-01 Guard)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [820, 300]
+      "position": [
+        860,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Mock WF-01 Response: Genera IDs sintéticos no reutilizables sin invocar WF-01\n// ==============================================================================\nconst item = $input.item.json;\nconst timestamp = Date.now().toString(36);\nconst synthProspectId = `SYNTH-PROSPECT-${item.row_index}-${timestamp}-TESTONLY`;\n\nreturn {\n  json: {\n    ...item,\n    prospect_id: synthProspectId,\n    normalized_business_name: item.business_name,\n    normalized_website_url: item.website_url,\n    status: 'MOCK_SYNTHETIC_PROCESSED',\n    wf01_executed_live: false\n  }\n};"
+        "jsCode": "// ==============================================================================\n// Mock WF-01 Response: Genera IDs sint\u00e9ticos no reutilizables sin invocar WF-01\n// ==============================================================================\nconst item = $input.item.json;\nconst timestamp = Date.now().toString(36);\nconst synthProspectId = `SYNTH-PROSPECT-${item.row_index}-${timestamp}-TESTONLY`;\n\nreturn {\n  json: {\n    ...item,\n    prospect_id: synthProspectId,\n    lead_key: synthProspectId,\n    normalized_business_name: item.business_name,\n    normalized_website_url: item.website_url,\n    status: 'MOCK_SYNTHETIC_PROCESSED',\n    wf01_executed_live: false\n  }\n};"
       },
-      "id": "e0000001-0001-4000-8000-000000000005",
+      "id": "e0000005-0005-4000-8000-000000000005",
       "name": "Mock WF-01 (Safe Synthetic)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1040, 200]
+      "position": [
+        1088,
+        200
+      ]
     },
     {
       "parameters": {
@@ -65,38 +92,72 @@
           "waitForSubWorkflow": true
         }
       },
-      "id": "e0000001-0001-4000-8000-000000000006",
+      "id": "e0000006-0006-4000-8000-000000000006",
       "name": "Call WF-01 (Live Intake & Dedup)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [1040, 420]
+      "position": [
+        1088,
+        448
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// SSRF & Safety Guard: Bloquea destinos locales, privados o metadata\n// Se ejecuta OBLIGATORIAMENTE tanto en pruebas como en producción\n// ==============================================================================\nconst item = $input.item.json;\nconst urlStr = item.normalized_website_url || item.website_url;\n\nfunction checkSSRF(url) {\n  if (!url) return { safe: false, reason: 'URL ausente' };\n  try {\n    const match = url.match(/^([a-zA-Z]+):\\/\\/([^/:]+)(?::(\\d+))?(\\/.*)?$/);\n    if (!match) return { safe: false, reason: 'Formato de URL inválido' };\n    const protocol = match[1].toLowerCase();\n    if (protocol !== 'http' && protocol !== 'https') {\n      return { safe: false, reason: `Protocolo no permitido: ${protocol}` };\n    }\n    const host = match[2].toLowerCase().replace(/^\\[|\\]$/g, '');\n    if (['localhost', '127.0.0.1', '::1', '0.0.0.0', 'metadata.google.internal'].includes(host)) {\n      return { safe: false, reason: 'Host de loopback / cloud metadata bloqueado' };\n    }\n    if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')) {\n      return { safe: false, reason: 'Red privada / cloud metadata bloqueada' };\n    }\n    if (host.match(/^172\\.(1[6-9]|2[0-9]|3[0-1])\\./)) {\n      return { safe: false, reason: 'Red privada RFC 1918 bloqueada' };\n    }\n    if (host.startsWith('fc') || host.startsWith('fe80') || host.includes('::ffff:')) {\n      return { safe: false, reason: 'Red IPv6 local o privada bloqueada' };\n    }\n    return { safe: true, reason: null };\n  } catch (e) {\n    return { safe: false, reason: 'Error validando SSRF: ' + (e && e.message ? e.message : String(e)) };\n  }\n}\n\nconst check = checkSSRF(urlStr);\nconst pId = item.prospect_id || `prospect-temp-${item.row_index || 1}`;\n\nreturn {\n  json: {\n    ...item,\n    prospect_id: pId,\n    audit_target_url: urlStr,\n    is_ssrf_safe: check.safe,\n    ssrf_block_reason: check.reason\n  }\n};"
+        "jsCode": "// ==============================================================================\n// Adaptador de Contrato WF-01: Extraer ID estable (lead_key) y mapear prospecto\n// ==============================================================================\nconst wf01Result = $input.item.json;\nlet prospect = {};\ntry {\n  prospect = $('Loop Over Prospects (Sequential)').item.json;\n} catch (e) {\n  prospect = $('Loop Over Prospects (Sequential)').first().json || {};\n}\n\nconst records = wf01Result.records || [];\nconst record = records[0] || {};\nconst leadKey = record.lead_key;\n\nif (!leadKey) {\n  const errorMsg = (wf01Result.errors && wf01Result.errors[0] && wf01Result.errors[0].error_message)\n    || (record.error_message)\n    || 'WF-01 did not return a valid lead_key for prospect';\n  throw new Error(`WF-01 Contract Failure: ${errorMsg}`);\n}\n\nreturn {\n  json: {\n    ...prospect,\n    prospect_id: leadKey,\n    lead_key: leadKey,\n    wf01_outcome: record.outcome || 'unknown',\n    wf01_status: record.final_status || 'unknown',\n    wf01_validation_issues: record.validation_issues || '',\n    wf01_executed_live: true,\n    normalized_website_url: prospect.website_url,\n    normalized_business_name: record.business_name || prospect.business_name\n  }\n};"
       },
-      "id": "e0000001-0001-4000-8000-000000000007",
+      "id": "e0000007-0007-4000-8000-000000000007",
+      "name": "Process WF-01 Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================================\n// SSRF & Safety Guard: Bloquea destinos locales, privados o metadata\n// Se ejecuta OBLIGATORIAMENTE tanto en pruebas como en producci\u00f3n\n// ==============================================================================\nconst item = $input.item.json;\nconst urlStr = item.normalized_website_url || item.website_url;\n\nfunction checkSSRF(url) {\n  if (!url) return { safe: false, reason: 'URL ausente' };\n  try {\n    const match = url.match(/^([a-zA-Z]+):\\/\\/([^/:]+)(?::(\\d+))?(\\/.*)?$/);\n    if (!match) return { safe: false, reason: 'Formato de URL inv\u00e1lido' };\n    const protocol = match[1].toLowerCase();\n    if (protocol !== 'http' && protocol !== 'https') {\n      return { safe: false, reason: `Protocolo no permitido: ${protocol}` };\n    }\n    const host = match[2].toLowerCase().replace(/^\\[|\\]$/g, '');\n    if (['localhost', '127.0.0.1', '::1', '0.0.0.0', 'metadata.google.internal'].includes(host)) {\n      return { safe: false, reason: 'Host de loopback / cloud metadata bloqueado' };\n    }\n    if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')) {\n      return { safe: false, reason: 'Red privada / cloud metadata bloqueada' };\n    }\n    if (host.match(/^172\\.(1[6-9]|2[0-9]|3[0-1])\\./)) {\n      return { safe: false, reason: 'Red privada RFC 1918 bloqueada' };\n    }\n    if (host.startsWith('fc') || host.startsWith('fe80') || host.includes('::ffff:')) {\n      return { safe: false, reason: 'Red IPv6 local o privada bloqueada' };\n    }\n    return { safe: true, reason: null };\n  } catch (e) {\n    return { safe: false, reason: 'Error validando SSRF: ' + (e && e.message ? e.message : String(e)) };\n  }\n}\n\nconst check = checkSSRF(urlStr);\n\nif (!item.prospect_id) {\n  if (item.is_synthetic_test) {\n    item.prospect_id = `SYNTH-PROSPECT-${item.row_index || 1}-${Date.now().toString(36)}-TESTONLY`;\n  } else {\n    throw new Error('SSRF Guard: Falta el prospect_id estable para un prospecto de producci\u00f3n.');\n  }\n}\n\nreturn {\n  json: {\n    ...item,\n    prospect_id: item.prospect_id,\n    lead_key: item.lead_key || item.prospect_id,\n    audit_target_url: urlStr,\n    is_ssrf_safe: check.safe,\n    ssrf_block_reason: check.reason\n  }\n};"
+      },
+      "id": "e0000008-0008-4000-8000-000000000008",
       "name": "SSRF Security Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1280, 300]
+      "position": [
+        1520,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.is_ssrf_safe }}",
-              "value2": true
+              "id": "guard-condition-ssrf-safe",
+              "leftValue": "={{ $json.is_ssrf_safe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "e0000001-0001-4000-8000-000000000008",
+      "id": "e0000009-0009-4000-8000-000000000009",
       "name": "Is Target Safe?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [1500, 300]
+      "position": [
+        1740,
+        300
+      ]
     },
     {
       "parameters": {
@@ -106,7 +167,7 @@
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "ZYRVAE-AuditBot/1.0 (+https://zyrvae.com/bot)"
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (ZYRVAE Technical Lead Auditor)"
             },
             {
               "name": "Accept",
@@ -115,104 +176,205 @@
           ]
         },
         "options": {
-          "allowUnauthorizedCerts": false,
+          "timeout": 8000,
           "redirect": {
             "redirect": {
               "maxRedirects": 5
             }
           },
-          "timeout": 8000,
           "response": {
             "response": {
-              "responseFormat": "text",
-              "fullResponse": true,
-              "neverError": true
+              "neverError": true,
+              "responseFormat": "text"
             }
           }
         }
       },
-      "id": "e0000001-0001-4000-8000-000000000009",
+      "id": "e0000010-0010-4000-8000-000000000010",
       "name": "HTTP Website Audit",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1720, 200]
+      "position": [
+        1960,
+        200
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Extraer evidencia técnica objetiva y formular hipótesis comerciales factibles\n// ==============================================================================\nconst item = $input.item.json;\nlet prospectData = {};\ntry {\n  prospectData = $('SSRF Security Filter').item.json;\n} catch (e) {\n  prospectData = $('SSRF Security Filter').first().json || {};\n}\n\nconst statusCode = item.statusCode || item.status || null;\nconst headers = item.headers || {};\nconst body = typeof item.body === 'string' ? item.body : (item.body ? JSON.stringify(item.body) : '');\nconst url = prospectData.audit_target_url || prospectData.website_url;\nconst prospectId = prospectData.prospect_id || `prospect-temp-${prospectData.row_index || 1}`;\n\nconst titleMatch = body.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\nconst title = titleMatch ? titleMatch[1].trim() : null;\n\nconst metaDescMatch = body.match(/<meta[^>]+name=['\"]description['\"][^>]+content=['\"]([\\s\\S]*?)['\"]/i) ||\n                      body.match(/<meta[^>]+content=['\"]([\\s\\S]*?)['\"][^>]+name=['\"]description['\"]/i);\nconst metaDescription = metaDescMatch ? metaDescMatch[1].trim() : null;\n\nconst viewportMatch = body.match(/<meta[^>]+name=['\"]viewport['\"]/i);\nconst hasViewport = Boolean(viewportMatch);\n\nconst sslActive = (url || '').startsWith('https://');\nconst isAccessible = statusCode >= 200 && statusCode < 400;\n\nlet errorCode = null;\nif (!isAccessible) {\n  if (statusCode) {\n    errorCode = `HTTP_ERROR_${statusCode}`;\n  } else if (item.error) {\n    errorCode = item.error.code || item.error.message || 'NETWORK_ERROR';\n  } else {\n    errorCode = 'NETWORK_ERROR';\n  }\n}\n\nconst hypotheses = [];\nif (!sslActive) {\n  hypotheses.push({\n    category: 'SECURITY_SSL',\n    evidence: 'Sitio opera sin HTTPS por defecto',\n    opportunity: 'Migración y securización con certificado SSL'\n  });\n}\nif (!hasViewport) {\n  hypotheses.push({\n    category: 'MOBILE_RESPONSIVE',\n    evidence: 'Falta etiqueta meta viewport para diseño responsivo',\n    opportunity: 'Optimización de interfaz móvil (Mobile UX / RWD)'\n  });\n}\nif (!metaDescription) {\n  hypotheses.push({\n    category: 'SEO_ONPAGE',\n    evidence: 'No posee meta description declarada en HTML',\n    opportunity: 'Optimización de snippets de búsqueda SEO on-page'\n  });\n}\nif (!isAccessible) {\n  hypotheses.push({\n    category: 'SITE_HEALTH',\n    evidence: `El sitio web no es accesible (${errorCode})`,\n    opportunity: 'Recuperación de disponibilidad web y diagnóstico de hosting'\n  });\n}\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    initial_url: url,\n    final_url: item.url || url,\n    http_status: statusCode,\n    page_title: title,\n    meta_description: metaDescription,\n    has_viewport: hasViewport,\n    ssl_active: sslActive,\n    is_accessible: isAccessible,\n    error_code: errorCode,\n    commercial_hypotheses: hypotheses,\n    raw_evidence: {\n      status_code: statusCode,\n      content_length: body.length,\n      server: headers['server'] || null\n    },\n    is_synthetic_test: Boolean(prospectData.is_synthetic_test)\n  }\n};"
+        "jsCode": "// ==============================================================================\n// Extraer evidencia t\u00e9cnica objetiva y formular hip\u00f3tesis comerciales factibles\n// ==============================================================================\nconst item = $input.item.json;\nlet prospectData = {};\ntry {\n  prospectData = $('SSRF Security Filter').item.json;\n} catch (e) {\n  prospectData = $('SSRF Security Filter').first().json || {};\n}\n\nconst statusCode = item.statusCode || item.status || null;\nconst headers = item.headers || {};\nconst body = typeof item.body === 'string' ? item.body : (item.body ? JSON.stringify(item.body) : '');\nconst url = prospectData.audit_target_url || prospectData.website_url;\nconst prospectId = prospectData.prospect_id || `prospect-temp-${prospectData.row_index || 1}`;\nconst leadKey = prospectData.lead_key || prospectId;\n\nconst titleMatch = body.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\nconst title = titleMatch ? titleMatch[1].trim() : null;\n\nconst metaDescMatch = body.match(/<meta[^>]+name=['\"]description['\"][^>]+content=['\"]([\\s\\S]*?)['\"]/i) ||\n                      body.match(/<meta[^>]+content=['\"]([\\s\\S]*?)['\"][^>]+name=['\"]description['\"]/i);\nconst metaDescription = metaDescMatch ? metaDescMatch[1].trim() : null;\n\nconst viewportMatch = body.match(/<meta[^>]+name=['\"]viewport['\"]/i);\nconst hasViewport = Boolean(viewportMatch);\n\nconst sslActive = (url || '').startsWith('https://');\nconst isAccessible = statusCode >= 200 && statusCode < 400;\n\nlet errorCode = null;\nif (!isAccessible) {\n  if (statusCode) {\n    errorCode = `HTTP_ERROR_${statusCode}`;\n  } else if (item.error) {\n    errorCode = item.error.code || item.error.message || 'NETWORK_ERROR';\n  } else {\n    errorCode = 'NETWORK_ERROR';\n  }\n}\n\nconst redirectCount = (item.redirectUrls && Array.isArray(item.redirectUrls)) ? item.redirectUrls.length : 0;\nconst responseTimeMs = typeof item.responseTime === 'number' ? Math.round(item.responseTime) : null;\n\nconst hypotheses = [];\nif (!sslActive) {\n  hypotheses.push({\n    category: 'SECURITY_SSL',\n    evidence: 'Sitio opera sin HTTPS por defecto',\n    opportunity: 'Migraci\u00f3n y securizaci\u00f3n con certificado SSL'\n  });\n}\nif (!hasViewport) {\n  hypotheses.push({\n    category: 'MOBILE_RESPONSIVE',\n    evidence: 'Falta etiqueta meta viewport para dise\u00f1o responsivo',\n    opportunity: 'Optimizaci\u00f3n de interfaz m\u00f3vil (Mobile UX / RWD)'\n  });\n}\nif (!metaDescription) {\n  hypotheses.push({\n    category: 'SEO_ONPAGE',\n    evidence: 'No posee meta description declarada en HTML',\n    opportunity: 'Optimizaci\u00f3n de snippets de b\u00fasqueda SEO on-page'\n  });\n}\nif (!isAccessible) {\n  hypotheses.push({\n    category: 'SITE_HEALTH',\n    evidence: `El sitio web no es accesible (${errorCode})`,\n    opportunity: 'Recuperaci\u00f3n de disponibilidad web y diagn\u00f3stico de hosting'\n  });\n}\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    lead_key: leadKey,\n    initial_url: url,\n    final_url: item.url || url,\n    http_status: statusCode,\n    redirect_count: redirectCount,\n    response_time_ms: responseTimeMs,\n    page_title: title,\n    meta_description: metaDescription,\n    has_viewport: hasViewport,\n    ssl_active: sslActive,\n    is_accessible: isAccessible,\n    error_code: errorCode,\n    commercial_hypotheses: hypotheses,\n    raw_evidence: {\n      status_code: statusCode,\n      content_length: body.length,\n      server: headers['server'] || null\n    },\n    is_synthetic_test: Boolean(prospectData.is_synthetic_test)\n  }\n};"
       },
-      "id": "e0000001-0001-4000-8000-000000000010",
+      "id": "e0000011-0011-4000-8000-000000000011",
       "name": "Extract Metadata & Facts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1940, 200]
+      "position": [
+        2180,
+        200
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Manejo para URLs bloqueadas por SSRF\nlet prospectData = {};\ntry {\n  prospectData = $('SSRF Security Filter').item.json;\n} catch (e) {\n  prospectData = $('SSRF Security Filter').first().json || {};\n}\nconst prospectId = prospectData.prospect_id || `prospect-temp-${prospectData.row_index || 1}`;\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    initial_url: prospectData.audit_target_url || prospectData.website_url,\n    final_url: null,\n    http_status: null,\n    page_title: null,\n    meta_description: null,\n    has_viewport: false,\n    ssl_active: false,\n    is_accessible: false,\n    error_code: 'SSRF_BLOCKED',\n    commercial_hypotheses: [],\n    raw_evidence: { reason: prospectData.ssrf_block_reason },\n    is_synthetic_test: Boolean(prospectData.is_synthetic_test)\n  }\n};"
+        "jsCode": "// Manejo para URLs bloqueadas por SSRF\nlet prospectData = {};\ntry {\n  prospectData = $('SSRF Security Filter').item.json;\n} catch (e) {\n  prospectData = $('SSRF Security Filter').first().json || {};\n}\nconst prospectId = prospectData.prospect_id || `prospect-temp-${prospectData.row_index || 1}`;\nconst leadKey = prospectData.lead_key || prospectId;\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    lead_key: leadKey,\n    initial_url: prospectData.audit_target_url || prospectData.website_url,\n    final_url: null,\n    http_status: null,\n    redirect_count: 0,\n    response_time_ms: null,\n    page_title: null,\n    meta_description: null,\n    has_viewport: false,\n    ssl_active: false,\n    is_accessible: false,\n    error_code: 'SSRF_BLOCKED',\n    commercial_hypotheses: [],\n    raw_evidence: { reason: prospectData.ssrf_block_reason },\n    is_synthetic_test: Boolean(prospectData.is_synthetic_test)\n  }\n};"
       },
-      "id": "e0000001-0001-4000-8000-000000000011",
+      "id": "e0000012-0012-4000-8000-000000000012",
       "name": "Handle SSRF Block",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1720, 420]
+      "position": [
+        1960,
+        420
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Preparar registro de auditoría estandarizado para website_audits\n// ==============================================================================\nconst item = $input.item.json;\nconst timestamp = Date.now().toString(36);\nconst auditId = item.is_synthetic_test\n  ? `SYNTH-AUDIT-${timestamp}-${Math.random().toString(36).substring(2, 7)}-TESTONLY`\n  : 'aud_' + Math.random().toString(36).substring(2, 15);\n\nconst auditRecord = {\n  id: auditId,\n  prospect_id: item.prospect_id,\n  audit_date: new Date().toISOString(),\n  initial_url: item.initial_url,\n  final_url: item.final_url,\n  http_status: item.http_status,\n  redirect_count: 0,\n  response_time_ms: null,\n  page_title: item.page_title,\n  meta_description: item.meta_description,\n  has_viewport: item.has_viewport,\n  ssl_active: item.ssl_active,\n  is_accessible: item.is_accessible,\n  error_code: item.error_code,\n  raw_evidence: JSON.stringify(item.raw_evidence),\n  commercial_hypotheses: JSON.stringify(item.commercial_hypotheses),\n  is_synthetic_test: Boolean(item.is_synthetic_test)\n};\n\nreturn { json: auditRecord };"
+        "jsCode": "// ==============================================================================\n// Preparar registro de auditor\u00eda estandarizado para website_audits\n// ==============================================================================\nconst item = $input.item.json;\nconst timestamp = Date.now().toString(36);\n\nfunction fnv(str, seed) {\n  let h = seed >>> 0;\n  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }\n  return ('00000000' + h.toString(16)).slice(-8);\n}\nfunction stableHash(str) { return fnv(str, 2166136261) + fnv(str, 3735928559); }\n\nconst normUrl = (item.initial_url || '').toLowerCase().replace(/\\/+$/, '');\nconst stableIdempotencyKey = 'aud_' + stableHash(String(item.lead_key || item.prospect_id) + ':' + normUrl);\n\nconst auditId = item.is_synthetic_test\n  ? `SYNTH-AUDIT-${timestamp}-${Math.random().toString(36).substring(2, 7)}-TESTONLY`\n  : stableIdempotencyKey;\n\nconst auditRecord = {\n  id: auditId,\n  audit_id: auditId,\n  prospect_id: String(item.prospect_id || ''),\n  lead_key: String(item.lead_key || item.prospect_id || ''),\n  audit_date: new Date().toISOString(),\n  initial_url: item.initial_url || '',\n  final_url: item.final_url || '',\n  http_status: typeof item.http_status === 'number' ? item.http_status : null,\n  redirect_count: typeof item.redirect_count === 'number' ? item.redirect_count : 0,\n  response_time_ms: typeof item.response_time_ms === 'number' ? item.response_time_ms : null,\n  page_title: item.page_title || '',\n  meta_description: item.meta_description || '',\n  has_viewport: Boolean(item.has_viewport),\n  ssl_active: Boolean(item.ssl_active),\n  is_accessible: Boolean(item.is_accessible),\n  error_code: item.error_code || '',\n  raw_evidence: JSON.stringify(item.raw_evidence || {}),\n  commercial_hypotheses: JSON.stringify(item.commercial_hypotheses || []),\n  is_synthetic_test: Boolean(item.is_synthetic_test)\n};\n\nreturn { json: auditRecord };"
       },
-      "id": "e0000001-0001-4000-8000-000000000012",
+      "id": "e0000013-0013-4000-8000-000000000013",
       "name": "Prepare Persistence Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2160, 300]
+      "position": [
+        2400,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.is_synthetic_test }}",
-              "value2": true
+              "id": "guard-condition-storage",
+              "leftValue": "={{ $json.is_synthetic_test }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "e0000001-0001-4000-8000-000000000013",
+      "id": "e0000014-0014-4000-8000-000000000014",
       "name": "Is Test Mode? (Storage Guard)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [2380, 300]
+      "position": [
+        2620,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Terminal de Prueba Segura: Visualización en Output sin escribir en Data Tables\n// ==============================================================================\nconst item = $input.item.json;\nreturn {\n  json: {\n    ...item,\n    _storage_status: 'DRY_RUN_NO_DATABASE_WRITE_PERFORMED',\n    _verification_note: 'Registro sintético verificado con éxito en memoria. Cero escrituras en la base de datos real.'\n  }\n};"
+        "jsCode": "// ==============================================================================\n// Terminal de Prueba Segura: Visualizaci\u00f3n en Output sin escribir en Data Tables\n// ==============================================================================\nconst item = $input.item.json;\nreturn {\n  json: {\n    ...item,\n    _storage_status: 'DRY_RUN_NO_DATABASE_WRITE_PERFORMED',\n    _verification_note: 'Registro sint\u00e9tico verificado con \u00e9xito en memoria. Cero escrituras en la base de datos real.'\n  }\n};"
       },
-      "id": "e0000001-0001-4000-8000-000000000014",
+      "id": "e0000015-0015-4000-8000-000000000015",
       "name": "Preview Test Audit (No Write)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2600, 200]
+      "position": [
+        2840,
+        200
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Producción: Persistencia en n8n Data Table website_audits\n// (Solo accesible cuando RUN_SYNTHETIC_TEST = false y datos reales cargados)\n// ==============================================================================\nconst item = $input.item.json;\nreturn { json: { ...item, _storage_status: 'PENDING_TABLE_WRITE' } };"
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "dpLz1QDQU3l4GyrP",
+          "cachedResultName": "website_audits"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "audit_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.audit_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "audit_id": "={{ $json.audit_id }}",
+            "prospect_id": "={{ $json.prospect_id }}",
+            "lead_key": "={{ $json.lead_key }}",
+            "audit_date": "={{ $json.audit_date }}",
+            "initial_url": "={{ $json.initial_url }}",
+            "final_url": "={{ $json.final_url }}",
+            "http_status": "={{ $json.http_status }}",
+            "redirect_count": "={{ $json.redirect_count }}",
+            "response_time_ms": "={{ $json.response_time_ms }}",
+            "is_accessible": "={{ $json.is_accessible }}",
+            "ssl_active": "={{ $json.ssl_active }}",
+            "has_viewport": "={{ $json.has_viewport }}",
+            "page_title": "={{ $json.page_title }}",
+            "meta_description": "={{ $json.meta_description }}",
+            "error_code": "={{ $json.error_code }}",
+            "commercial_hypotheses": "={{ $json.commercial_hypotheses }}",
+            "raw_evidence": "={{ $json.raw_evidence }}",
+            "is_synthetic_test": "={{ $json.is_synthetic_test }}"
+          }
+        }
       },
-      "id": "e0000001-0001-4000-8000-000000000015",
+      "id": "e0000016-0016-4000-8000-000000000016",
       "name": "Write to website_audits Table (Prod Only)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2840,
+        440
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================================\n// \u00c9xito de Persistencia: Confirmaci\u00f3n de registro escrito en website_audits\n// ==============================================================================\nlet item = {};\ntry {\n  item = ($input.item && $input.item.json) ? $input.item.json : ($input.first ? $input.first().json : {});\n} catch (e) {\n  item = ($input.first ? $input.first().json : {}) || {};\n}\nlet auditPayload = {};\ntry {\n  auditPayload = $('Prepare Persistence Payload').item.json;\n} catch (e) {\n  auditPayload = $('Prepare Persistence Payload').first().json || {};\n}\nreturn {\n  json: {\n    ...auditPayload,\n    ...item,\n    _storage_status: 'PERSISTED_REAL',\n    persisted_table: 'website_audits',\n    persisted_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "e0000017-0017-4000-8000-000000000017",
+      "name": "Record Persistence Success",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2600, 420]
+      "position": [
+        3080,
+        380
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Fin del Bucle: Resumen de Ejecución por Lote\n// ==============================================================================\nreturn {\n  json: {\n    status: 'BATCH_COMPLETED',\n    completed_at: new Date().toISOString(),\n    message: 'Todos los registros del lote han sido procesados de forma secuencial.'\n  }\n};"
+        "jsCode": "// ==============================================================================\n// Gesti\u00f3n Expl\u00edcita de Error de Escritura: Nunca reportar \u00e9xito si falla la BD\n// ==============================================================================\nlet errorItem = {};\ntry {\n  errorItem = ($input.item && $input.item.json) ? $input.item.json : ($input.first ? $input.first().json : {});\n} catch (e) {\n  errorItem = ($input.first ? $input.first().json : {}) || {};\n}\nlet auditPayload = {};\ntry {\n  auditPayload = $('Prepare Persistence Payload').item.json;\n} catch (e) {\n  auditPayload = $('Prepare Persistence Payload').first().json || {};\n}\nconst errorMsg = errorItem.error || errorItem.message || errorItem.description || 'Fallo al escribir en la Data Table website_audits';\nreturn {\n  json: {\n    ...auditPayload,\n    _storage_status: 'PERSISTENCE_FAILED',\n    storage_error: String(errorMsg),\n    failed_at: new Date().toISOString()\n  }\n};"
       },
-      "id": "e0000001-0001-4000-8000-000000000016",
+      "id": "e0000018-0018-4000-8000-000000000018",
+      "name": "Handle Write Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================================\n// Fin del Bucle: Resumen de Ejecuci\u00f3n por Lote\n// ==============================================================================\nreturn {\n  json: {\n    status: 'BATCH_COMPLETED',\n    completed_at: new Date().toISOString(),\n    message: 'Todos los registros del lote han sido procesados de forma secuencial.'\n  }\n};"
+      },
+      "id": "e0000019-0019-4000-8000-000000000019",
       "name": "Execution Completed",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [820, 560]
+      "position": [
+        3300,
+        300
+      ]
     }
   ],
   "connections": {
@@ -286,6 +448,17 @@
       ]
     },
     "Call WF-01 (Live Intake & Dedup)": {
+      "main": [
+        [
+          {
+            "node": "Process WF-01 Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process WF-01 Response": {
       "main": [
         [
           {
@@ -402,6 +575,35 @@
       "main": [
         [
           {
+            "node": "Record Persistence Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Persistence Success": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Prospects (Sequential)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Write Error": {
+      "main": [
+        [
+          {
             "node": "Loop Over Prospects (Sequential)",
             "type": "main",
             "index": 0
@@ -412,16 +614,7 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner"
+    "executionOrder": "v1"
   },
-  "tags": [
-    {
-      "name": "ZYRVAE"
-    },
-    {
-      "name": "Prospects"
-    }
-  ]
+  "tags": []
 }
