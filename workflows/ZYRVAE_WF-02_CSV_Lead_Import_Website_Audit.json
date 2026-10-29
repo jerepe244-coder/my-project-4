@@ -44,7 +44,7 @@
       "id": "e0000001-0001-4000-8000-000000000004",
       "name": "Is Test Mode? (WF-01 Guard)",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "typeVersion": 1,
       "position": [820, 300]
     },
     {
@@ -95,12 +95,13 @@
       "id": "e0000001-0001-4000-8000-000000000008",
       "name": "Is Target Safe?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "typeVersion": 1,
       "position": [1500, 300]
     },
     {
       "parameters": {
         "url": "={{ $json.audit_target_url }}",
+        "sendHeaders": true,
         "options": {
           "allowUnauthorizedCerts": false,
           "redirect": {
@@ -138,7 +139,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Extraer evidencia técnica objetiva y formular hipótesis comerciales factibles\n// ==============================================================================\nconst item = $input.item.json;\nlet prospectData = {};\ntry {\n  prospectData = $('SSRF Security Filter').item.json;\n} catch (e) {\n  prospectData = $('SSRF Security Filter').first().json || {};\n}\n\nconst statusCode = item.statusCode || item.status || null;\nconst headers = item.headers || {};\nconst body = typeof item.body === 'string' ? item.body : '';\nconst url = prospectData.audit_target_url || prospectData.website_url;\nconst prospectId = prospectData.prospect_id || `prospect-temp-${prospectData.row_index || 1}`;\n\nconst titleMatch = body.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\nconst title = titleMatch ? titleMatch[1].trim() : null;\n\nconst metaDescMatch = body.match(/<meta[^>]+name=['\"]description['\"][^>]+content=['\"]([\\s\\S]*?)['\"]/i) ||\n                      body.match(/<meta[^>]+content=['\"]([\\s\\S]*?)['\"][^>]+name=['\"]description['\"]/i);\nconst metaDescription = metaDescMatch ? metaDescMatch[1].trim() : null;\n\nconst viewportMatch = body.match(/<meta[^>]+name=['\"]viewport['\"]/i);\nconst hasViewport = Boolean(viewportMatch);\n\nconst sslActive = (url || '').startsWith('https://');\nconst isAccessible = statusCode >= 200 && statusCode < 400;\n\nconst hypotheses = [];\nif (!sslActive) {\n  hypotheses.push({\n    category: 'SECURITY_SSL',\n    evidence: 'Sitio opera sin HTTPS por defecto',\n    opportunity: 'Migración y securización con certificado SSL'\n  });\n}\nif (!hasViewport) {\n  hypotheses.push({\n    category: 'MOBILE_RESPONSIVE',\n    evidence: 'Falta etiqueta meta viewport para diseño responsivo',\n    opportunity: 'Optimización de interfaz móvil (Mobile UX / RWD)'\n  });\n}\nif (!metaDescription) {\n  hypotheses.push({\n    category: 'SEO_ONPAGE',\n    evidence: 'No posee meta description declarada en HTML',\n    opportunity: 'Optimización de snippets de búsqueda SEO on-page'\n  });\n}\nif (statusCode && statusCode >= 400) {\n  hypotheses.push({\n    category: 'SITE_HEALTH',\n    evidence: `El servidor web respondió con código de error HTTP ${statusCode}`,\n    opportunity: 'Recuperación de disponibilidad web y diagnóstico de hosting'\n  });\n}\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    initial_url: url,\n    final_url: item.url || url,\n    http_status: statusCode,\n    page_title: title,\n    meta_description: metaDescription,\n    has_viewport: hasViewport,\n    ssl_active: sslActive,\n    is_accessible: isAccessible,\n    error_code: isAccessible ? null : (statusCode ? `HTTP_ERROR_${statusCode}` : 'NETWORK_ERROR'),\n    commercial_hypotheses: hypotheses,\n    raw_evidence: {\n      status_code: statusCode,\n      content_length: body.length,\n      server: headers['server'] || null\n    },\n    is_synthetic_test: Boolean(prospectData.is_synthetic_test)\n  }\n};"
+        "jsCode": "// ==============================================================================\n// Extraer evidencia técnica objetiva y formular hipótesis comerciales factibles\n// ==============================================================================\nconst item = $input.item.json;\nlet prospectData = {};\ntry {\n  prospectData = $('SSRF Security Filter').item.json;\n} catch (e) {\n  prospectData = $('SSRF Security Filter').first().json || {};\n}\n\nconst statusCode = item.statusCode || item.status || null;\nconst headers = item.headers || {};\nconst body = typeof item.body === 'string' ? item.body : '';\nconst url = prospectData.audit_target_url || prospectData.website_url;\nconst prospectId = prospectData.prospect_id || `prospect-temp-${prospectData.row_index || 1}`;\n\nconst titleMatch = body.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\nconst title = titleMatch ? titleMatch[1].trim() : null;\n\nconst metaDescMatch = body.match(/<meta[^>]+name=['\"]description['\"][^>]+content=['\"]([\\s\\S]*?)['\"]/i) ||\n                      body.match(/<meta[^>]+content=['\"]([\\s\\S]*?)['\"][^>]+name=['\"]description['\"]/i);\nconst metaDescription = metaDescMatch ? metaDescMatch[1].trim() : null;\n\nconst viewportMatch = body.match(/<meta[^>]+name=['\"]viewport['\"]/i);\nconst hasViewport = Boolean(viewportMatch);\n\nconst sslActive = (url || '').startsWith('https://');\nconst isAccessible = statusCode >= 200 && statusCode < 400;\n\nlet errorCode = null;\nif (!isAccessible) {\n  if (statusCode) {\n    errorCode = `HTTP_ERROR_${statusCode}`;\n  } else if (item.error) {\n    errorCode = item.error.code || item.error.message || 'NETWORK_ERROR';\n  } else {\n    errorCode = 'NETWORK_ERROR';\n  }\n}\n\nconst hypotheses = [];\nif (!sslActive) {\n  hypotheses.push({\n    category: 'SECURITY_SSL',\n    evidence: 'Sitio opera sin HTTPS por defecto',\n    opportunity: 'Migración y securización con certificado SSL'\n  });\n}\nif (!hasViewport) {\n  hypotheses.push({\n    category: 'MOBILE_RESPONSIVE',\n    evidence: 'Falta etiqueta meta viewport para diseño responsivo',\n    opportunity: 'Optimización de interfaz móvil (Mobile UX / RWD)'\n  });\n}\nif (!metaDescription) {\n  hypotheses.push({\n    category: 'SEO_ONPAGE',\n    evidence: 'No posee meta description declarada en HTML',\n    opportunity: 'Optimización de snippets de búsqueda SEO on-page'\n  });\n}\nif (!isAccessible) {\n  hypotheses.push({\n    category: 'SITE_HEALTH',\n    evidence: `El sitio web no es accesible (${errorCode})`,\n    opportunity: 'Recuperación de disponibilidad web y diagnóstico de hosting'\n  });\n}\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    initial_url: url,\n    final_url: item.url || url,\n    http_status: statusCode,\n    page_title: title,\n    meta_description: metaDescription,\n    has_viewport: hasViewport,\n    ssl_active: sslActive,\n    is_accessible: isAccessible,\n    error_code: errorCode,\n    commercial_hypotheses: hypotheses,\n    raw_evidence: {\n      status_code: statusCode,\n      content_length: body.length,\n      server: headers['server'] || null\n    },\n    is_synthetic_test: Boolean(prospectData.is_synthetic_test)\n  }\n};"
       },
       "id": "e0000001-0001-4000-8000-000000000010",
       "name": "Extract Metadata & Facts",
@@ -180,7 +181,7 @@
       "id": "e0000001-0001-4000-8000-000000000013",
       "name": "Is Test Mode? (Storage Guard)",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "typeVersion": 1,
       "position": [2380, 300]
     },
     {
@@ -195,13 +196,23 @@
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================================\n// Producción: Persistencia en n8n Data Table website_audits\n// (Solo accesible cuando RUN_SYNTHETIC_TEST = false y datos reales cargados)\n// ==============================================================================\nconst item = $input.item.json;\n// En producción, aquí se vincula el nodo nativo de Data Table o inserción\nreturn { json: { ...item, _storage_status: 'PENDING_TABLE_WRITE' } };"
+        "jsCode": "// ==============================================================================\n// Producción: Persistencia en n8n Data Table website_audits\n// (Solo accesible cuando RUN_SYNTHETIC_TEST = false y datos reales cargados)\n// ==============================================================================\nconst item = $input.item.json;\nreturn { json: { ...item, _storage_status: 'PENDING_TABLE_WRITE' } };"
       },
       "id": "e0000001-0001-4000-8000-000000000015",
       "name": "Write to website_audits Table (Prod Only)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [2600, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================================\n// Fin del Bucle: Resumen de Ejecución por Lote\n// ==============================================================================\nreturn {\n  json: {\n    status: 'BATCH_COMPLETED',\n    completed_at: new Date().toISOString(),\n    message: 'Todos los registros del lote han sido procesados de forma secuencial.'\n  }\n};"
+      },
+      "id": "e0000001-0001-4000-8000-000000000016",
+      "name": "Execution Completed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 560]
     }
   ],
   "connections": {
@@ -232,6 +243,13 @@
         [
           {
             "node": "Is Test Mode? (WF-01 Guard)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execution Completed",
             "type": "main",
             "index": 0
           }

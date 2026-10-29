@@ -67,6 +67,7 @@ flowchart TD
 | **Is Test Mode? (Storage Guard)** | `n8n-nodes-base.if` | Bifurca según `is_synthetic_test === true`. Impide cualquier escritura en Data Tables durante la prueba. |
 | **Preview Test Audit (No Write)** | `n8n-nodes-base.code` | Terminal de prueba: expone el JSON completo en el panel de n8n para inspección con `_storage_status: 'DRY_RUN_NO_DATABASE_WRITE_PERFORMED'`. |
 | **Write to website_audits Table** | `n8n-nodes-base.code` | Terminal de producción: destino final de persistencia real en la Data Table `website_audits`. |
+| **Execution Completed** | `n8n-nodes-base.code` | Terminal de finalización de lote cuando `Loop Over Prospects` agota todas las filas del archivo. |
 
 ---
 
