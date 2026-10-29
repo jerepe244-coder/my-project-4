@@ -1,79 +1,79 @@
 # Arquitectura ZYRVAE WF-02 — CSV Lead Import & Website Audit
 
 ## 1. Resumen Ejecutivo y Objetivo
-El workflow **ZYRVAE WF-02** automatiza la ingesta masiva de prospectos a partir de archivos CSV, orquesta la validación y deduplicación a través de **ZYRVAE WF-01**, ejecuta auditorías HTTP no invasivas sobre los sitios web de los leads válidos y estructura las evidencias técnicas objetivas para detectar hipótesis comerciales concretas.
+El workflow **ZYRVAE WF-02** automatiza la ingesta de prospectos mediante CSV, orquesta la validación y deduplicación a través de **ZYRVAE WF-01**, ejecuta auditorías HTTP no invasivas sobre los sitios web de los prospectos válidos y estructura evidencias técnicas objetivas para identificar hipótesis comerciales concretas.
 
-* **Estado de activación:** `active: false` (Inactivo según requerimiento).
+* **Estado de activación:** `active: false` (Inactivo por diseño).
 * **ID de Integración con WF-01:** `tTHszjE5cqMyK1iF` (`ZYRVAE WF-01 Lead Intake & Data Quality`).
-* **Tabla de persistencia propuesta:** `website_audits` (relacionada 1:N con la tabla existente `prospects` mediante `prospect_id`).
+* **Tabla de persistencia de destino:** `website_audits` (relacionada 1:N con `prospects.id`).
+* **Modo de Seguridad Predeterminado:** `RUN_SYNTHETIC_TEST = true` (Aislamiento absoluto con bypass de WF-01 y almacenamiento en modo prueba).
 
 ---
 
-## 2. Diagrama de Flujo del Workflow
+## 2. Diagrama de Flujo con Aislamiento de Seguridad (Bypass Guards)
 
 ```mermaid
 flowchart TD
-    Start(["Manual Trigger / Binary CSV"]) --> NodeParse["Parse & Validate CSV"]
+    Start(["Manual Trigger"]) --> NodeParse["Parse & Validate CSV (Default: RUN_SYNTHETIC_TEST=true)"]
     NodeParse --> Loop["Loop Over Prospects (Sequential Batch 1)"]
-    Loop --> CallWF01["Call WF-01 (tTHszjE5cqMyK1iF)"]
-    CallWF01 --> SSRF["SSRF Security Filter"]
+    Loop --> GuardWF01{"¿Es Modo Test? (WF-01 Guard)"}
+    
+    %% Ramas de WF-01
+    GuardWF01 -- "Sí (Test)" --> MockWF01["Mock WF-01 (Safe Synthetic ID: SYNTH-PROSPECT-*)"]
+    GuardWF01 -- "No (Prod)" --> CallWF01["Call WF-01 (Live Intake & Dedup: tTHszjE5cqMyK1iF)"]
+    
+    %% Convergencia obligatoria en filtro SSRF
+    MockWF01 --> SSRF["SSRF Security Filter (RFC 1918, Loopback, Metadata)"]
+    CallWF01 --> SSRF
+    
+    %% Auditoría HTTP
     SSRF --> CheckSafe{"¿Es Target Seguro?"}
     CheckSafe -- "Sí (Público)" --> AuditHTTP["HTTP Website Audit (8s timeout)"]
     CheckSafe -- "No (Privado/Loopback)" --> SSRFBlock["Handle SSRF Block"]
     AuditHTTP --> ExtractFacts["Extract Metadata & Facts"]
-    ExtractFacts --> Persist["Prepare Persistence Payload"]
-    SSRFBlock --> Persist
-    Persist --> Loop
+    
+    %% Preparación de Payload
+    ExtractFacts --> PersistPayload["Prepare Persistence Payload"]
+    SSRFBlock --> PersistPayload
+    
+    %% Guard de Persistencia
+    PersistPayload --> GuardStorage{"¿Es Modo Test? (Storage Guard)"}
+    GuardStorage -- "Sí (Test)" --> PreviewOnly["Preview Test Audit Output (NO WRITE)"]
+    GuardStorage -- "No (Prod)" --> WriteTable["Write to website_audits Table (Prod Only)"]
+    
+    %% Bucle secuencial
+    PreviewOnly --> Loop
+    WriteTable --> Loop
 ```
 
 ---
 
-## 3. Especificación de Nodos
+## 3. Especificación Detallada de Nodos
 
-| Nodo | Tipo de Nodo | Propósito y Configuración Clave |
+| Nodo | Tipo de Nodo | Propósito y Aislamiento de Seguridad |
 | :--- | :--- | :--- |
-| **Manual Trigger** | `n8n-nodes-base.manualTrigger` | Inicio manual / testeo controlado en n8n UI. |
-| **Parse & Validate CSV** | `n8n-nodes-base.code` | Soporte para entrada binaria o texto; validación de encabezados; rechazo de filas vacías; validación sintáctica de URL; deduplicación intra-archivo. |
-| **Loop Over Prospects** | `n8n-nodes-base.splitInBatches` | Tamaño de lote 1 (`batchSize: 1`) para garantizar procesamiento secuencial estricto y evitar condiciones de carrera (*race conditions*) en deduplicación. |
-| **Call WF-01** | `n8n-nodes-base.executeWorkflow` | Invoca a `ZYRVAE WF-01` (`tTHszjE5cqMyK1iF`) delegando normalización y deduplicación en la base de datos principal (`prospects`). |
-| **SSRF Security Filter** | `n8n-nodes-base.code` | Evalúa la URL contra rangos RFC 1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`), link-local/cloud metadata (`169.254.0.0/16`) y protocolos inseguros (`file:`, `ftp:`). |
-| **Is Target Safe?** | `n8n-nodes-base.if` | Bifurcación condicional según el resultado del filtro SSRF. |
-| **HTTP Website Audit** | `n8n-nodes-base.httpRequest` | Petición `GET` no invasiva. Timeout 8.000 ms, máx. 5 redirecciones, headers estándar con User-Agent corporativo, `neverError: true` para captura controlada de errores 4xx/5xx. |
-| **Extract Metadata & Facts** | `n8n-nodes-base.code` | Extracción regex segura de `<title>`, `<meta name="description">`, `<meta name="viewport">`, verificación HTTPS y derivación de hipótesis comerciales objetivas vinculadas al `prospect_id`. |
-| **Handle SSRF Block** | `n8n-nodes-base.code` | Registro seguro de evidencia de bloqueo por SSRF sin emitir llamadas de red. |
-| **Prepare Persistence Payload** | `n8n-nodes-base.code` | Mapeo al esquema estandarizado de `website_audits`. |
+| **Manual Trigger** | `n8n-nodes-base.manualTrigger` | Inicio manual / testeo en n8n UI. |
+| **Parse & Validate CSV** | `n8n-nodes-base.code` | Variable `RUN_SYNTHETIC_TEST = true` por defecto. Si es test, inyecta 6 casos sintéticos con `is_synthetic_test: true`. Si es false, exige archivo binario real. |
+| **Loop Over Prospects** | `n8n-nodes-base.splitInBatches` | Tamaño de lote 1 (`batchSize: 1`) para garantizar procesamiento secuencial estricto. |
+| **Is Test Mode? (WF-01 Guard)** | `n8n-nodes-base.if` | Bifurca según `is_synthetic_test === true`. Impide que datos de prueba alcancen a WF-01. |
+| **Mock WF-01 (Safe Synthetic)** | `n8n-nodes-base.code` | Genera un ID sintético `SYNTH-PROSPECT-{row}-{timestamp}-TESTONLY` sin invocar a WF-01 ni escribir en `prospects`. |
+| **Call WF-01 (Live Intake)** | `n8n-nodes-base.executeWorkflow` | Invoca a WF-01 (`tTHszjE5cqMyK1iF`) **únicamente** cuando `is_synthetic_test === false`. |
+| **SSRF Security Filter** | `n8n-nodes-base.code` | **Obligatorio en ambas ramas**. Bloquea loopback (`127.0.0.1`, `::1`), privadas (`10.x`, `172.16-31.x`, `192.168.x`) y cloud metadata (`169.254.169.254`). |
+| **Is Target Safe?** | `n8n-nodes-base.if` | Desvía URLs privadas a `Handle SSRF Block` sin emitir peticiones HTTP. |
+| **HTTP Website Audit** | `n8n-nodes-base.httpRequest` | Timeout 8.000 ms, máx. 5 redirecciones, headers corporativos estándar, `neverError: true`. |
+| **Extract Metadata & Facts** | `n8n-nodes-base.code` | Extracción HTML de Title, Meta Description, Viewport, SSL y categorización de hipótesis comerciales. |
+| **Handle SSRF Block** | `n8n-nodes-base.code` | Registro de evidencia de bloqueo por SSRF sin llamada de red. |
+| **Prepare Persistence Payload** | `n8n-nodes-base.code` | Mapeo al esquema estandarizado de `website_audits` con ID sintético `SYNTH-AUDIT-*` si es prueba. |
+| **Is Test Mode? (Storage Guard)** | `n8n-nodes-base.if` | Bifurca según `is_synthetic_test === true`. Impide cualquier escritura en Data Tables durante la prueba. |
+| **Preview Test Audit (No Write)** | `n8n-nodes-base.code` | Terminal de prueba: expone el JSON completo en el panel de n8n para inspección con `_storage_status: 'DRY_RUN_NO_DATABASE_WRITE_PERFORMED'`. |
+| **Write to website_audits Table** | `n8n-nodes-base.code` | Terminal de producción: destino final de persistencia real en la Data Table `website_audits`. |
 
 ---
 
-## 4. Estructura de Datos y Modelo de Tablas
+## 4. Garantías de Seguridad y Verificación Topológica
 
-### Tabla `website_audits`
-Definida en [`sql/002_create_website_audits_table.sql`](file:///home/runner/work/my-project-4/my-project-4/sql/002_create_website_audits_table.sql):
-* `id` (VARCHAR 36, PK).
-* `prospect_id` (VARCHAR 36, FK -> `prospects.id`).
-* `audit_date` (TIMESTAMP WITH TIME ZONE).
-* `initial_url` (TEXT).
-* `final_url` (TEXT).
-* `http_status` (INTEGER).
-* `redirect_count` (INTEGER).
-* `response_time_ms` (INTEGER).
-* `page_title` (TEXT).
-* `meta_description` (TEXT).
-* `has_viewport` (BOOLEAN).
-* `ssl_active` (BOOLEAN).
-* `is_accessible` (BOOLEAN).
-* `error_code` (VARCHAR 100).
-* `raw_evidence` (JSONB).
-* `commercial_hypotheses` (JSONB).
-
----
-
-## 5. Pruebas y Evidencias de Verificación
-La suite de pruebas automatizadas en [`tests/test_wf02_pipeline.py`](file:///home/runner/work/my-project-4/my-project-4/tests/test_wf02_pipeline.py) ejecutó los siguientes casos sintéticos:
-
-1. **TEST-01 (URL Válida):** `https://example.com` -> 200 OK, SSL detectado, título extraído, hipótesis de falta de viewport generada.
-2. **TEST-02 (Error HTTP):** `https://httpbin.org/status/404` -> Captura de código 404, `is_accessible: false`, el prospecto **no es eliminado**.
-3. **TEST-03 (URL Sintácticamente Inválida):** `not-a-valid-domain` -> Capturado y registrado en log de errores de parsing.
-4. **TEST-04 (Duplicado Intra-Lote):** URL repetida en el mismo CSV -> Detectado y omitido sin duplicación.
-5. **TEST-05 (Intento SSRF):** `http://127.0.0.1:8080/admin` -> Bloqueado inmediatamente por el guard SSRF sin llamada de red.
-6. **TEST-06 (Fila Vacía):** Fila sin campos -> Descartada y registrada como `EMPTY_ROW`.
+El test automatizado [`tests/test_workflow_topology.py`](file:///home/runner/work/my-project-4/my-project-4/tests/test_workflow_topology.py) verifica formalmente:
+1. **0 caminos entre la rama sintética y WF-01:** La salida de prueba se conecta exclusivamente a `Mock WF-01`.
+2. **0 caminos entre la rama sintética y escrituras en tablas:** La salida de prueba se conecta exclusivamente a `Preview Test Audit (No Write)`.
+3. **Paso forzoso por el filtro SSRF:** Ninguna URL puede alcanzar `HTTP Website Audit` sin haber sido validada por `SSRF Security Filter`.
+4. **No reutilización de identificadores:** Los IDs sintéticos incorporan timestamp de alta resolución y sufijo explícito `-TESTONLY`.
