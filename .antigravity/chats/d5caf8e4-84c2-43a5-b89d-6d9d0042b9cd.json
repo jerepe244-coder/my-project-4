@@ -160,6 +160,30 @@
       "created_at": "2026-10-29T17:41:38.832Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "4b2d7248-307b-4954-b088-8a297e0c0788",
+      "role": "user",
+      "content": "Realizá una única validación final integral de WF-02 antes de importarlo. Revisá el JSON completo contra la versión real de n8n, los tipos y parámetros de los nodos, las conexiones, el manejo de errores, el procesamiento CSV, la integración con WF-01, la seguridad SSRF y el aislamiento de pruebas. Confirmá que RUN_SYNTHETIC_TEST sea seguro por defecto y que no exista ningún camino de prueba hacia WF-01 ni hacia nodos de escritura.\n\nEjecutá todas las validaciones locales disponibles y corregí en una sola pasada los problemas que encuentres. No modifiques la instancia n8n ni ejecutes workflows remotos.\n\nEntregame un único informe final: archivo definitivo, validaciones realizadas, problemas corregidos y limitaciones pendientes. Si todo está listo, indicá los pasos para importarlo y probarlo de forma aislada. No vuelvas a solicitar aprobación para cada corrección local que no modifique servicios ni datos reales.",
+      "status": "cancelled",
+      "model": "gemini-3.8-flash-medium",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-10-29T18:12:34.778Z",
+      "sender": "ios",
+      "is_cancelled": true
+    },
+    {
+      "id": "844e86e3-9081-41fe-96f6-ea80c63210de",
+      "role": "user",
+      "content": "Continuá con WF-02 y completá la prueba de forma autónoma. Importá el JSON definitivo en mi instancia de n8n y ejecutá una única prueba integrada, solo si tenés acceso y permisos reales.\n\nMantené el workflow inactivo y RUN_SYNTHETIC_TEST = true. Verificá que se procesen los seis casos sintéticos, que no exista ejecución de WF-01 ni escrituras en tablas y que el resultado de Preview Test Audit (No Write) confirme el modo de prueba. No proceses prospectos reales, no actives workflows, no crees tablas ni modifiques otros workflows.\n\nSi detectás errores, corregí los que puedas sin alterar servicios ni datos reales y repetí únicamente las pruebas necesarias para comprobar esas correcciones. Si falta acceso o autorización, no improvises: completá todas las validaciones posibles sin conexión y señalá el bloqueo exacto.\n\nEntregame un único informe final con el resultado real, las pruebas realizadas, los errores corregidos y el próximo paso imprescindible. No declares éxito sin evidencia de ejecución en n8n. No me dividas el trabajo en nuevas tareas ni me pidas decisiones técnicas que podés resolver por tu cuenta.",
+      "status": "pending",
+      "model": "gemini-3.8-flash-medium",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-10-29T18:15:03.890Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
