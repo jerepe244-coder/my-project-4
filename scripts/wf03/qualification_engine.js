@@ -778,7 +778,9 @@ function wf03EvaluateProspect(leadKey, prospectRows, auditGroups, rules, rulesDi
     commercial_use_allowed: ev.commercial_use_allowed
   };
 
-  var recCheck = wf03ValidatePersistenceRecord(wf03BuildPersistenceRecord(ev, ctx));
+  var record = wf03BuildPersistenceRecord(ev, ctx);
+  var recCheck = wf03ValidatePersistenceRecord(record);
+  ev.persistence_record = record;
   if (recCheck.length) { ev.persistence_action = 'NONE_INVALID_RECORD'; ev.record_errors = recCheck; }
   return ev;
 }

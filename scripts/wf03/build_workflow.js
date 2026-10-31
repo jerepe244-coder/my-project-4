@@ -375,15 +375,12 @@ const routeEvaluationsJsCode = `
 
 const batchResult = $input.first().json;
 const evaluations = batchResult.evaluations || [];
-const ctx = {
-  execution_id: $execution ? $execution.id : 'manual'
-};
 
 const itemsOut = [];
 
 evaluations.forEach(ev => {
-  const record = wf03BuildPersistenceRecord(ev, ctx);
-  const recValidationErrors = wf03ValidatePersistenceRecord(record);
+  const record = ev.persistence_record || {};
+  const recValidationErrors = ev.record_errors || [];
 
   itemsOut.push({
     json: {
@@ -690,8 +687,8 @@ const workflow = {
         operation: 'upsert',
         dataTableId: {
           __rl: true,
-          mode: 'name',
-          value: 'lead_qualifications',
+          mode: 'id',
+          value: 'GTtrgRiV4XxZijZZ',
           cachedResultName: 'lead_qualifications'
         },
         matchType: 'allConditions',
@@ -705,8 +702,43 @@ const workflow = {
           ]
         },
         columns: {
-          mappingMode: 'autoMapInputData',
-          value: '={{ $json.record }}'
+          mappingMode: 'defineBelow',
+          value: {
+            qualification_id: '={{ $json.record.qualification_id }}',
+            lead_key: '={{ $json.record.lead_key }}',
+            prospect_row_ids: '={{ $json.record.prospect_row_ids }}',
+            business_name: '={{ $json.record.business_name }}',
+            website_url: '={{ $json.record.website_url }}',
+            evaluated_at: '={{ $json.record.evaluated_at }}',
+            rules_version: '={{ $json.record.rules_version }}',
+            rules_digest: '={{ $json.record.rules_digest }}',
+            evidence_fingerprint: '={{ $json.record.evidence_fingerprint }}',
+            run_mode: '={{ $json.record.run_mode }}',
+            classification: '={{ $json.record.classification }}',
+            priority_label: '={{ $json.record.priority_label }}',
+            score: '={{ $json.record.score }}',
+            score_components: '={{ $json.record.score_components }}',
+            caps_applied: '={{ $json.record.caps_applied }}',
+            traceability_status: '={{ $json.record.traceability_status }}',
+            is_test_data: '={{ $json.record.is_test_data }}',
+            requires_review: '={{ $json.record.requires_review }}',
+            review_reasons: '={{ $json.record.review_reasons }}',
+            exclusion_reason: '={{ $json.record.exclusion_reason }}',
+            verified_findings: '={{ $json.record.verified_findings }}',
+            hypotheses_assessment: '={{ $json.record.hypotheses_assessment }}',
+            service_fit: '={{ $json.record.service_fit }}',
+            warnings: '={{ $json.record.warnings }}',
+            commercial_signals: '={{ $json.record.commercial_signals }}',
+            commercial_use_allowed: '={{ $json.record.commercial_use_allowed }}',
+            primary_audit_id: '={{ $json.record.primary_audit_id }}',
+            source_audit_ids: '={{ $json.record.source_audit_ids }}',
+            evidence_refs: '={{ $json.record.evidence_refs }}',
+            input_snapshot: '={{ $json.record.input_snapshot }}',
+            explanation: '={{ $json.record.explanation }}',
+            supersedes_qualification_id: '={{ $json.record.supersedes_qualification_id }}',
+            previous_classification: '={{ $json.record.previous_classification }}',
+            workflow_execution_id: '={{ $json.record.workflow_execution_id }}'
+          }
         }
       },
       id: 'wf03-node-datatable-write',

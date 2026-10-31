@@ -16,7 +16,9 @@ Este directorio contiene las definiciones exportadas de los flujos de automatiza
 * **Modo de Seguridad:** `RUN_SYNTHETIC_TEST = true` por defecto (Aislamiento absoluto con cero escrituras).
 
 ### 3. ZYRVAE WF-03 Lead Qualification & Prioritization
+* **ID en n8n Cloud:** `O4YiErQMAGK9yGPZ`
 * **Archivo:** [`ZYRVAE_WF-03_Lead_Qualification_Prioritization.json`](file:///home/runner/work/my-project-4/my-project-4/workflows/ZYRVAE_WF-03_Lead_Qualification_Prioritization.json)
+* **Tabla de destino:** `lead_qualifications` (`GTtrgRiV4XxZijZZ` en proyecto `gpI1QfU4f7fk1cv8`).
 * **Función:** Calificación comercial determinista, scoring explicable (0-100), clasificación por niveles de prioridad, trazabilidad tri-estado estricta, derivación a revisión e idempotencia no destructiva.
 * **Estado:** `active: false` (Inactivo por diseño).
 * **Modo de Seguridad:** `RUN_SYNTHETIC_TEST = true` por defecto (Aislamiento absoluto con cero escrituras).

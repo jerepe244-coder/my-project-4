@@ -5,12 +5,12 @@ El workflow **ZYRVAE WF-03** automatiza la calificación comercial y priorizaci�
 
 El objetivo es establecer un sistema de scoring **determinista, auditable, explicable y configurable**, que transforme señales técnicas verificadas (como ausencia de SSL, diseño no responsivo o lentitud) en niveles de prioridad comercial concretos (**Alta**, **Media**, **Baja**), excluyendo rigurosamente los datos de prueba y derivando a **Revisión Manual** cualquier registro con evidencia insuficiente, trazabilidad desconocida o contradicciones técnicas.
 
-* **ID en n8n:** Preparado para importación / vinculación (`active: false` por diseño).
+* **ID en n8n Cloud:** `O4YiErQMAGK9yGPZ` (`active: false` por diseño).
 * **Modo de Seguridad Predeterminado:** `RUN_SYNTHETIC_TEST = true` (Aislamiento absoluto con cero escrituras y lote de prueba sintético incorporado).
 * **Fuentes de entrada:**
   * Tabla `prospects` (`XXFhpG7YA3LLc0F4`, generada por WF-01).
   * Tabla `website_audits` (`dpLz1QDQU3l4GyrP`, generada por WF-02).
-* **Tabla de persistencia de destino:** `lead_qualifications` (definida en `sql/003_create_lead_qualifications_table.sql`).
+* **Tabla de persistencia de destino:** `lead_qualifications` (`GTtrgRiV4XxZijZZ` en proyecto `gpI1QfU4f7fk1cv8`, definida en `sql/003_create_lead_qualifications_table.sql`).
 * **Motor de Reglas:** `scripts/wf03/qualification_engine.js` (v1.0.0, función pura determinista).
 
 ---
@@ -242,12 +242,18 @@ La suite de pruebas automatizadas cubre el 100% de los 18 escenarios obligatorio
 
 ---
 
-## 11. Estado de Sincronización y Configuración Pendiente
+## 11. Estado de Instalación, Integración y Verificación en n8n Cloud
 
-* **Workflows en n8n Cloud:**
-  * WF-01 (`tTHszjE5cqMyK1iF`): `active: false` (Preservado e inactivo).
-  * WF-02 (`KosNnbUlKPeKZXHh`): `active: false` (Preservado e inactivo).
-  * WF-03 (`ZYRVAE_WF-03_Lead_Qualification_Prioritization.json`): Generado localmente con `active: false`. Pendiente de importación controlada a n8n Cloud cuando se autorice su despliegue.
+* **Workflows en n8n Cloud (`https://zyrvae.app.n8n.cloud`):**
+  * **WF-01** (`tTHszjE5cqMyK1iF`): `active: false` (Preservado e inactivo).
+  * **WF-02** (`KosNnbUlKPeKZXHh`): `active: false` (Preservado e inactivo).
+  * **WF-03** (`O4YiErQMAGK9yGPZ`): Instalado con 13 nodos, 12 conexiones, `active: false`.
 * **Data Table `lead_qualifications`:**
-  * Estructura DDL completamente documentada en `sql/003_create_lead_qualifications_table.sql`.
-  * Pendiente de creación en n8n Cloud (respetando la restricción de no crear recursos de producción sin autorización previa).
+  * Creada en n8n Cloud con ID **`GTtrgRiV4XxZijZZ`** dentro del proyecto `gpI1QfU4f7fk1cv8`.
+  * 34 columnas configuradas y validadas contra [`sql/003_create_lead_qualifications_table.sql`](file:///home/runner/work/my-project-4/my-project-4/sql/003_create_lead_qualifications_table.sql).
+* **Pruebas de Integración Ejecutadas en n8n Cloud:**
+  * **Ejecución #13 (Modo Manual Sintético):** Concluida con estado `success`. Evaluó 8 escenarios sintéticos (1 Alta, 1 Media, 5 Revisión, 1 Excluido de prueba). El Storage Guard desvió todos los registros a `Preview Test Qualifications (No Write)`.
+  * **Ejecución #14 (Reejecución de Idempotencia):** Concluida con estado `success`, confirmando determinismo y estabilidad del lienzo.
+  * **Verificación de Cero Escrituras:** Se comprobó formalmente con `get_data_table_rows` que `lead_qualifications` permanece con 0 filas escritas (`count: 0`), garantizando aislamiento absoluto de datos sintéticos.
+* **Configuración Comercial Pendiente:**
+  * Confirmación de códigos de servicios de ZYRVAE en `confirmed_service_codes` (por defecto se mantiene `['WEB_SECURITY_SSL']` y catálogo conservador sin confirmación activa para el resto).
