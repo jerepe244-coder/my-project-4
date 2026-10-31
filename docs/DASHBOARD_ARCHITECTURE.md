@@ -159,35 +159,47 @@ El sistema unifica cuatro tablas mediante la clave canónica **`lead_key`**:
 
 ---
 
-## 6. Variables de Entorno y Despliegue en Vercel
+## 6. Variables de Entorno y Modos de Operación (Fase 2: Integración Real con n8n)
 
-### Archivo `.env.example`
-```bash
-# n8n Cloud Instance Configuration (Server-side ONLY)
-N8N_BASE_URL=https://zyrvae.app.n8n.cloud
-N8N_API_KEY=
+### 6.1. Separación de Modos: DEMO vs LIVE READ-ONLY
 
-# Identificadores de Workflows
-N8N_PROJECT_ID=gpI1QfU4f7fk1cv8
-N8N_WF01_ID=tTHszjE5cqMyK1iF
-N8N_WF02_ID=KosNnbUlKPeKZXHh
-N8N_WF03_ID=O4YiErQMAGK9yGPZ
+El dashboard implementa dos modos de operación mutuamente excluyentes, gobernados por variables de entorno server-side:
 
-# Identificadores de Data Tables
-N8N_TABLE_PROSPECTS=XXFhpG7YA3LLc0F4
-N8N_TABLE_AUDITS=dpLz1QDQU3l4GyrP
-N8N_TABLE_QUALIFICATIONS=GTtrgRiV4XxZijZZ
-N8N_TABLE_ERRORS=Qig4adosI9vsNThw
+| Aspecto | Modo DEMO (`RUN_SYNTHETIC_TEST=true`) | Modo LIVE READ-ONLY (`RUN_SYNTHETIC_TEST=false`) |
+| :--- | :--- | :--- |
+| **Fuente de datos** | Lote sintético estricto (`synthetic-data.ts`) | n8n Cloud REST API (`/api/v1/data-tables/:id/rows`) |
+| **Credenciales requeridas** | Ninguna (no requiere `N8N_API_KEY`) | `N8N_API_KEY` obligatoria server-side |
+| **Peticiones de red a n8n** | Cero (aislamiento completo) | Consultas HTTP autenticadas con `X-N8N-API-KEY` |
+| **Fallback ante errores** | No aplica (datos locales inmediatos) | **Sin fallback silencioso**: informa el error explícito |
+| **Distintivo en UI** | Badge azul `MODO DEMO` | Badge esmeralda `LIVE READ-ONLY` |
+| **System Status** | Reporta `SYNTHETIC_MODE` y mocks activos | Valida las 5 capas de salud antes de `CONNECTED` |
 
-# Modo de Seguridad (true = Aislamiento Sintético, false = Producción en Vivo)
-RUN_SYNTHETIC_TEST=true
-```
+> [!IMPORTANT]
+> **Seguridad por defecto:** `RUN_SYNTHETIC_TEST=true` es la configuración segura predeterminada. La mera presencia de una `N8N_API_KEY` nunca cambia automáticamente el sistema a LIVE READ-ONLY; la selección del modo es siempre deliberada y explícita.
 
-### Configuración en Vercel:
-1. Acceder al dashboard de Vercel en el proyecto conectado.
-2. Navegar a **Project Settings** → **Environment Variables**.
-3. Cargar las variables anteriores para los entornos de **Production** y **Preview**.
-4. La variable `N8N_API_KEY` nunca debe contener el prefijo `NEXT_PUBLIC_` para garantizar que no sea accesible desde el navegador del cliente.
+### 6.2. Endpoints y Mecanismo de Consulta de Data Tables
+* **Base URL:** `https://zyrvae.app.n8n.cloud/api/v1`
+* **Cabecera de autenticación:** `X-N8N-API-KEY: <n8n_api_key>` (nunca expuesta al frontend ni en logs).
+* **Consulta de registros:** `GET /api/v1/data-tables/{tableId}/rows?limit=250&cursor={nextCursor}`
+* **Paginación:** Navegación por cursor (`nextCursor`) con límite defensivo de hasta 10 páginas (2.500 registros).
+* **Inspección de salud en System Status:** Comprobación individual de las cuatro Data Tables con consulta de sonda (`limit=1`).
+
+### 6.3. Identificadores de Data Tables
+* `prospects`: `XXFhpG7YA3LLc0F4`
+* `website_audits`: `dpLz1QDQU3l4GyrP`
+* `lead_qualifications`: `GTtrgRiV4XxZijZZ`
+* `lead_intake_errors`: `Qig4adosI9vsNThw`
+
+### 6.4. Procedimiento de Configuración Manual en Vercel
+1. Ingresar a la consola de n8n Cloud (`https://zyrvae.app.n8n.cloud`).
+2. Ir a **Settings** → **n8n API** y generar una API Key con permisos de lectura para Data Tables (`dataTable:read`, `dataTableRow:read`).
+3. Ingresar al panel de Vercel en el proyecto `my-project-4`.
+4. Ir a **Project Settings** → **Environment Variables** y agregar:
+   * `N8N_BASE_URL` = `https://zyrvae.app.n8n.cloud` (Environments: Production, Preview).
+   * `N8N_API_KEY` = `[valor de la API Key generada]` (Server-side ONLY; **sin** prefijo `NEXT_PUBLIC_`).
+   * `RUN_SYNTHETIC_TEST` = `false` (Environments: Production, Preview).
+5. Desplegar o realizar un Redeploy en Vercel.
+6. Acceder a `/system` en el dashboard y confirmar que el estado reporte `CONNECTED` y que las 4 Data Tables se encuentren en estado `AVAILABLE`.
 
 ---
 

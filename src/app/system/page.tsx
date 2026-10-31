@@ -2,9 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from '@/lib/i18n/context';
-import { SystemStatusData } from '@/types/system';
+import { SystemStatusData, DataTableStatus } from '@/types/system';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import {
   Server,
   Database,
@@ -12,11 +11,13 @@ import {
   XCircle,
   AlertTriangle,
   RefreshCw,
-  ExternalLink,
   ShieldCheck,
   ShieldAlert,
-  HelpCircle,
   Clock,
+  Layers,
+  KeyRound,
+  FileCheck2,
+  Lock,
 } from 'lucide-react';
 
 export default function SystemStatusPage() {
@@ -58,7 +59,57 @@ export default function SystemStatusPage() {
   }
 
   const isConnected = status?.connection_status === 'CONNECTED';
-  const isSynthetic = status?.is_synthetic_mode;
+  const isPartial = status?.connection_status === 'PARTIAL';
+  const isCredentialsMissing = status?.connection_status === 'CREDENTIALS_MISSING';
+  const isSynthetic = status?.is_synthetic_mode || status?.mode === 'DEMO';
+  const isLive = status?.mode === 'LIVE_READ_ONLY';
+
+  const getTableStatusBadge = (readStatus: DataTableStatus['read_status']) => {
+    switch (readStatus) {
+      case 'AVAILABLE':
+        return (
+          <span className="font-mono text-[11px] text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50 inline-flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            CONSULTABLE
+          </span>
+        );
+      case 'SYNTHETIC_MOCK':
+        return (
+          <span className="font-mono text-[11px] text-blue-300 bg-blue-950/60 px-2 py-0.5 rounded border border-blue-800/40 inline-flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3 text-blue-400" />
+            DEMO MOCK
+          </span>
+        );
+      case 'CREDENTIALS_REQUIRED':
+        return (
+          <span className="font-mono text-[11px] text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/40 inline-flex items-center gap-1">
+            <KeyRound className="w-3 h-3 text-amber-400" />
+            CREDENCIALES REQUERIDAS
+          </span>
+        );
+      case 'PERMISSION_DENIED':
+        return (
+          <span className="font-mono text-[11px] text-rose-300 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/50 inline-flex items-center gap-1">
+            <Lock className="w-3 h-3 text-rose-400" />
+            PERMISO DENEGADO
+          </span>
+        );
+      case 'NOT_FOUND':
+        return (
+          <span className="font-mono text-[11px] text-rose-300 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/50 inline-flex items-center gap-1">
+            <XCircle className="w-3 h-3 text-rose-400" />
+            NO ENCONTRADA
+          </span>
+        );
+      default:
+        return (
+          <span className="font-mono text-[11px] text-rose-300 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/50 inline-flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3 text-rose-400" />
+            INACCESIBLE
+          </span>
+        );
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -94,6 +145,8 @@ export default function SystemStatusPage() {
                   ? 'bg-emerald-950/50 border-emerald-800 text-emerald-400'
                   : isSynthetic
                   ? 'bg-blue-950/50 border-blue-800 text-blue-400'
+                  : isPartial || isCredentialsMissing
+                  ? 'bg-amber-950/50 border-amber-800 text-amber-400'
                   : 'bg-rose-950/50 border-rose-800 text-rose-400'
               }`}
             >
@@ -101,26 +154,43 @@ export default function SystemStatusPage() {
             </div>
 
             <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <h3 className="text-base font-bold text-zyrvae-100">
                   {t.system.n8nConnection}
                 </h3>
+
+                {/* Connection Status Badge */}
                 {isConnected ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    CONECTADO
+                    CONNECTED (TABLAS VALIDADAS)
                   </span>
                 ) : isSynthetic ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800">
-                    <ShieldAlert className="w-3 h-3 text-blue-400" />
-                    AISLAMIENTO SINTÉTICO (DEMO)
+                    <ShieldCheck className="w-3 h-3 text-blue-400" />
+                    MODO DEMO (SINTÉTICO AISLADO)
+                  </span>
+                ) : isCredentialsMissing ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800">
+                    <KeyRound className="w-3 h-3 text-amber-400" />
+                    LIVE: CREDENCIALES PENDIENTES
+                  </span>
+                ) : isPartial ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800">
+                    <AlertTriangle className="w-3 h-3 text-amber-400" />
+                    LIVE: ACCESO PARCIAL A TABLAS
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800">
                     <XCircle className="w-3 h-3 text-rose-400" />
-                    SIN CONEXIÓN
+                    LIVE: ERROR DE CONEXIÓN
                   </span>
                 )}
+
+                {/* Mode Pill */}
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-zyrvae-850 text-zyrvae-300 border border-zyrvae-750">
+                  MODO: {status?.mode || (isSynthetic ? 'DEMO' : 'LIVE_READ_ONLY')}
+                </span>
               </div>
 
               <div className="text-xs text-zyrvae-400 font-mono">
@@ -129,8 +199,11 @@ export default function SystemStatusPage() {
 
               <p className="text-xs text-zyrvae-400 leading-relaxed font-sans max-w-xl">
                 {isSynthetic
-                  ? 'El dashboard opera de forma totalmente aislada con datos sintéticos seguros. Para habilitar consultas a n8n Cloud en vivo, configure N8N_API_KEY en Vercel.'
-                  : 'Backend seguro conectado a n8n Cloud mediante credenciales server-side.'}
+                  ? 'El dashboard opera en modo DEMO con datos sintéticos aislados. Para activar LIVE READ-ONLY configure N8N_API_KEY y RUN_SYNTHETIC_TEST=false en Vercel.'
+                  : isConnected
+                  ? 'Conexión validada con n8n Cloud en modo estrictamente LIVE READ-ONLY. Las cuatro Data Tables fueron verificadas exitosamente.'
+                  : status?.error_message ||
+                    'Operando en modo LIVE READ-ONLY. No se utilizarán datos sintéticos como fallback silencioso.'}
               </p>
             </div>
           </div>
@@ -150,6 +223,146 @@ export default function SystemStatusPage() {
                 <span className="text-zyrvae-200">{status.response_time_ms} ms</span>
               </div>
             )}
+          </div>
+        </div>
+      </Card>
+
+      {/* 5-Level Health Inspection Breakdown */}
+      <Card
+        title="Validación de Capas de Integración (Criterios de Conexión)"
+        subtitle="Distinción estricta de los 5 estados de disponibilidad exigidos"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {/* 1. Credenciales configuradas */}
+          <div className="p-3.5 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono font-medium text-zyrvae-400">1. Credenciales</span>
+              {status?.credentials_configured ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <XCircle className="w-4 h-4 text-zyrvae-500" />
+              )}
+            </div>
+            <div className="text-xs font-semibold text-zyrvae-200">
+              {status?.credentials_configured ? 'Configuradas' : 'Pendientes'}
+            </div>
+            <p className="text-[10px] text-zyrvae-500">
+              {status?.credentials_configured
+                ? 'N8N_BASE_URL y N8N_API_KEY presentes'
+                : 'Falta N8N_API_KEY'}
+            </p>
+          </div>
+
+          {/* 2. Autenticación validada */}
+          <div className="p-3.5 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono font-medium text-zyrvae-400">2. Autenticación</span>
+              {status?.authentication_validated ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              ) : isSynthetic ? (
+                <ShieldCheck className="w-4 h-4 text-blue-400" />
+              ) : (
+                <XCircle className="w-4 h-4 text-zyrvae-500" />
+              )}
+            </div>
+            <div className="text-xs font-semibold text-zyrvae-200">
+              {isSynthetic
+                ? 'No requerida (Demo)'
+                : status?.authentication_validated
+                ? 'Validada HTTP 200'
+                : 'No validada'}
+            </div>
+            <p className="text-[10px] text-zyrvae-500">
+              {isSynthetic
+                ? 'Modo demo aislado'
+                : status?.authentication_validated
+                ? 'API Key aceptada por n8n'
+                : 'Sin token o rechazada'}
+            </p>
+          </div>
+
+          {/* 3. API accesible */}
+          <div className="p-3.5 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono font-medium text-zyrvae-400">3. API Accesible</span>
+              {status?.api_accessible ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              ) : isSynthetic ? (
+                <ShieldCheck className="w-4 h-4 text-blue-400" />
+              ) : (
+                <XCircle className="w-4 h-4 text-zyrvae-500" />
+              )}
+            </div>
+            <div className="text-xs font-semibold text-zyrvae-200">
+              {isSynthetic
+                ? 'Aislada (Demo)'
+                : status?.api_accessible
+                ? 'Accesible'
+                : 'Inaccesible'}
+            </div>
+            <p className="text-[10px] text-zyrvae-500">
+              {isSynthetic
+                ? 'Cero peticiones de red'
+                : status?.api_accessible
+                ? 'Servidor n8n respondiendo'
+                : 'Timeout o fallo de red'}
+            </p>
+          </div>
+
+          {/* 4. Data Tables consultables */}
+          <div className="p-3.5 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono font-medium text-zyrvae-400">4. Data Tables</span>
+              {status?.tables_queryable ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              ) : isSynthetic ? (
+                <ShieldCheck className="w-4 h-4 text-blue-400" />
+              ) : (
+                <XCircle className="w-4 h-4 text-zyrvae-500" />
+              )}
+            </div>
+            <div className="text-xs font-semibold text-zyrvae-200">
+              {isSynthetic
+                ? 'Mocks Activos'
+                : status?.tables_queryable
+                ? '4/4 Consultables'
+                : 'Incompletas / No'}
+            </div>
+            <p className="text-[10px] text-zyrvae-500">
+              {isSynthetic
+                ? 'Lote sintético preparado'
+                : status?.tables_queryable
+                ? 'Las 4 tablas verificadas'
+                : 'Pendiente de prueba'}
+            </p>
+          </div>
+
+          {/* 5. Datos reales cargados */}
+          <div className="p-3.5 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono font-medium text-zyrvae-400">5. Datos Reales</span>
+              {status?.real_data_loaded ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              ) : isSynthetic ? (
+                <ShieldCheck className="w-4 h-4 text-blue-400" />
+              ) : (
+                <XCircle className="w-4 h-4 text-zyrvae-500" />
+              )}
+            </div>
+            <div className="text-xs font-semibold text-zyrvae-200">
+              {isSynthetic
+                ? 'Cero Datos Reales'
+                : status?.real_data_loaded
+                ? 'Cargados'
+                : 'Sin Cargar'}
+            </div>
+            <p className="text-[10px] text-zyrvae-500">
+              {isSynthetic
+                ? 'Modo seguro sin mezclas'
+                : status?.real_data_loaded
+                ? 'Directo de n8n Data Tables'
+                : 'Pendiente de consulta'}
+            </p>
           </div>
         </div>
       </Card>
@@ -199,7 +412,7 @@ export default function SystemStatusPage() {
         {/* Data Tables Status */}
         <Card
           title={t.system.tablesTitle}
-          subtitle="Estado de lectura de las 4 Data Tables nativas de n8n"
+          subtitle="Estado de lectura individual de las 4 Data Tables nativas de n8n"
         >
           <div className="space-y-3">
             {status?.tables.map((tbl) => (
@@ -215,18 +428,25 @@ export default function SystemStatusPage() {
                     </span>
                   </div>
 
-                  <span className="font-mono text-[11px] text-blue-300 bg-blue-950/50 px-2 py-0.5 rounded border border-blue-800/40">
-                    {tbl.read_status}
-                  </span>
+                  <div>{getTableStatusBadge(tbl.read_status)}</div>
                 </div>
 
                 <p className="text-xs text-zyrvae-400 font-sans">
                   {tbl.purpose}
                 </p>
 
-                <div className="flex items-center justify-between text-[11px] font-mono text-zyrvae-500 pt-1 border-t border-zyrvae-850">
+                {tbl.error_message && (
+                  <div className="text-[11px] font-mono text-rose-400 bg-rose-950/30 p-2 rounded border border-rose-900/50">
+                    {tbl.error_message}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-zyrvae-500 pt-1 border-t border-zyrvae-850 gap-2">
                   <span>Table ID: {tbl.id}</span>
                   <span>Registros: {tbl.rows_count ?? 0}</span>
+                  {tbl.last_queried && (
+                    <span>Consulta: {new Date(tbl.last_queried).toLocaleTimeString()}</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -240,7 +460,7 @@ export default function SystemStatusPage() {
         <div className="lg:col-span-7">
           <Card
             title={t.system.envTitle}
-            subtitle={t.system.envNotice}
+            subtitle="Variables configuradas vs pendientes (los valores reales nunca se exponen al cliente)"
           >
             <div className="space-y-2">
               {status?.env_variables.map((env) => (
@@ -271,7 +491,7 @@ export default function SystemStatusPage() {
                     ) : (
                       <span className="inline-flex items-center gap-1 font-mono text-[11px] text-zyrvae-500">
                         <XCircle className="w-3.5 h-3.5 text-zyrvae-600" />
-                        No configurada
+                        Pendiente
                       </span>
                     )}
                   </div>
@@ -285,42 +505,45 @@ export default function SystemStatusPage() {
         <div className="lg:col-span-5">
           <Card
             title={t.system.vercelGuideTitle}
-            subtitle="Pasos para conectar n8n Cloud en producción"
+            subtitle="Procedimiento para pasar de DEMO a LIVE READ-ONLY en Vercel"
           >
             <div className="space-y-3 text-xs text-zyrvae-300">
               <div className="p-3 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-1">
                 <span className="font-mono font-bold text-electric block">
-                  {t.system.vercelStep1}
+                  1. Obtener API Key en n8n Cloud
                 </span>
                 <p className="text-zyrvae-400 text-[11px]">
-                  Seleccione el repositorio conectado jerepe244-coder/my-project-4.
+                  En su consola n8n Cloud, ingrese a <strong>Settings &gt; n8n API</strong> y genere una API Key con permisos de lectura para Data Tables (`dataTable:read`, `dataTableRow:read`).
                 </p>
               </div>
 
               <div className="p-3 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-1">
                 <span className="font-mono font-bold text-electric block">
-                  {t.system.vercelStep2}
+                  2. Cargar Variables en Vercel
                 </span>
                 <p className="text-zyrvae-400 text-[11px]">
-                  Acceda a las opciones de configuración de variables server-side.
+                  En Vercel Project Settings &gt; Environment Variables, cree:
+                  <br />• <code className="text-zyrvae-200">N8N_API_KEY</code> = [su clave de n8n] (Server-side ONLY, sin NEXT_PUBLIC_).
+                  <br />• <code className="text-zyrvae-200">RUN_SYNTHETIC_TEST</code> = <code className="text-amber-300">false</code> (para activar LIVE READ-ONLY).
+                  <br />• <code className="text-zyrvae-200">N8N_BASE_URL</code> = <code className="text-zyrvae-300">https://zyrvae.app.n8n.cloud</code>
                 </p>
               </div>
 
               <div className="p-3 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-1">
                 <span className="font-mono font-bold text-electric block">
-                  {t.system.vercelStep3}
+                  3. Re-desplegar (Redeploy)
                 </span>
                 <p className="text-zyrvae-400 text-[11px]">
-                  Asegure que la clave se guarde de forma privada (nunca con prefijo NEXT_PUBLIC_).
+                  Dispare un Redeploy en Vercel para que las nuevas variables tomen efecto en runtime.
                 </p>
               </div>
 
               <div className="p-3 rounded-lg bg-zyrvae-950 border border-zyrvae-800 space-y-1">
                 <span className="font-mono font-bold text-electric block">
-                  {t.system.vercelStep4}
+                  4. Verificar en System Status
                 </span>
                 <p className="text-zyrvae-400 text-[11px]">
-                  {t.system.vercelStep5}
+                  Vuelva a esta vista. El estado pasará a CONNECTED únicamente tras comprobar exitosamente el acceso de solo lectura a las 4 Data Tables.
                 </p>
               </div>
             </div>

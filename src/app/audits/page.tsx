@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n/context';
 import { WebsiteAudit, CategorizedFinding } from '@/types/audit';
 import { SearchInput } from '@/components/ui/SearchInput';
@@ -28,6 +29,7 @@ export default function AuditsPage() {
   const { t } = useTranslation();
   const [audits, setAudits] = useState<EnrichedAudit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -44,9 +46,12 @@ export default function AuditsPage() {
         const json = await res.json();
         if (json.data) {
           setAudits(json.data);
+        } else if (json.error) {
+          setError(json.error);
         }
-      } catch (err) {
-        console.error('Failed to load audits', err);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error al conectar con la API';
+        setError(msg);
       } finally {
         setLoading(false);
       }
@@ -98,6 +103,29 @@ export default function AuditsPage() {
           {t.audits.subtitle}
         </p>
       </div>
+
+      {/* Error Alert if query failed in LIVE mode */}
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-800/60 flex items-start justify-between gap-3 shadow-subtle">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="text-xs font-semibold text-rose-200">
+                Error en consulta LIVE READ-ONLY de Data Table website_audits
+              </div>
+              <p className="text-[11px] text-rose-300/80 mt-0.5">
+                {error}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/system"
+            className="inline-flex items-center gap-1.5 text-xs font-mono text-rose-400 hover:text-rose-300 transition-colors shrink-0"
+          >
+            Ver estado del sistema
+          </Link>
+        </div>
+      )}
 
       {/* Distinction Guide Card */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3 rounded-xl bg-zyrvae-900 border border-zyrvae-800 text-xs font-mono">

@@ -28,6 +28,7 @@ export default function ProspectDetailPage() {
   const { t } = useTranslation();
   const [prospect, setProspect] = useState<EnrichedProspect | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
 
   useEffect(() => {
@@ -37,9 +38,12 @@ export default function ProspectDetailPage() {
         const json = await res.json();
         if (json.data) {
           setProspect(json.data);
+        } else if (json.error) {
+          setError(json.error);
         }
-      } catch (err) {
-        console.error('Failed to load prospect detail', err);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error al conectar con la API';
+        setError(msg);
       } finally {
         setLoading(false);
       }
@@ -71,11 +75,13 @@ export default function ProspectDetailPage() {
   if (!prospect) {
     return (
       <div className="p-12 text-center">
-        <h2 className="text-xl font-bold text-zyrvae-200">Prospecto no encontrado</h2>
-        <p className="text-xs text-zyrvae-400 mt-2">
-          No se encontró ningún registro para el identificador solicitado ({id}).
+        <h2 className="text-xl font-bold text-zyrvae-200">
+          {error ? 'Error en consulta LIVE READ-ONLY' : 'Prospecto no encontrado'}
+        </h2>
+        <p className="text-xs text-zyrvae-400 mt-2 max-w-lg mx-auto">
+          {error || `No se encontró ningún registro para el identificador solicitado (${id}).`}
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex justify-center gap-3">
           <Link
             href="/prospects"
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zyrvae-800 text-zyrvae-200 border border-zyrvae-700 text-xs"
@@ -83,6 +89,14 @@ export default function ProspectDetailPage() {
             <ArrowLeft className="w-4 h-4" />
             {t.prospectDetail.backToList}
           </Link>
+          {error && (
+            <Link
+              href="/system"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zyrvae-900 text-rose-300 border border-rose-800 text-xs font-mono"
+            >
+              Ver estado del sistema
+            </Link>
+          )}
         </div>
       </div>
     );

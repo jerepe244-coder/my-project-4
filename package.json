@@ -10,7 +10,8 @@
     "lint": "next lint",
     "test:wf03": "node scripts/wf03/test_qualification_engine.js",
     "test:py": "python3 -m unittest discover tests",
-    "test": "npm run test:wf03 && npm run test:py"
+    "test:n8n": "tsx --test tests/test_n8n_integration.mjs",
+    "test": "npm run test:wf03 && npm run test:py && npm run test:n8n"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -29,6 +30,7 @@
     "eslint-config-next": "^14.2.35",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.3"
   }
 }

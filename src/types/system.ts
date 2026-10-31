@@ -1,3 +1,5 @@
+export type DashboardMode = 'DEMO' | 'LIVE_READ_ONLY';
+
 export interface WorkflowStatus {
   id: string;
   name: string;
@@ -14,7 +16,14 @@ export interface DataTableStatus {
   id: string;
   name: string;
   purpose: string;
-  read_status: 'AVAILABLE' | 'UNREACHABLE' | 'CREDENTIALS_REQUIRED' | 'SYNTHETIC_MOCK';
+  read_status:
+    | 'AVAILABLE'
+    | 'UNREACHABLE'
+    | 'CREDENTIALS_REQUIRED'
+    | 'SYNTHETIC_MOCK'
+    | 'NOT_FOUND'
+    | 'PERMISSION_DENIED'
+    | 'EMPTY';
   rows_count?: number;
   last_queried?: string;
   error_message?: string;
@@ -28,12 +37,18 @@ export interface EnvironmentVariableStatus {
 }
 
 export interface SystemStatusData {
-  connection_status: 'CONNECTED' | 'CREDENTIALS_MISSING' | 'ERROR' | 'SYNTHETIC_MODE';
+  connection_status: 'CONNECTED' | 'CREDENTIALS_MISSING' | 'ERROR' | 'SYNTHETIC_MODE' | 'PARTIAL';
+  mode: DashboardMode;
   base_url: string;
   is_synthetic_mode: boolean;
   last_checked: string;
   response_time_ms?: number;
   error_message?: string;
+  credentials_configured: boolean;
+  authentication_validated: boolean;
+  api_accessible: boolean;
+  tables_queryable: boolean;
+  real_data_loaded: boolean;
   workflows: WorkflowStatus[];
   tables: DataTableStatus[];
   env_variables: EnvironmentVariableStatus[];

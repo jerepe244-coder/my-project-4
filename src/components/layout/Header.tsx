@@ -3,17 +3,21 @@
 import React from 'react';
 import { useTranslation } from '@/lib/i18n/context';
 import { Menu, Globe } from 'lucide-react';
+import { DashboardMode } from '@/types/system';
 
 interface HeaderProps {
   onMenuToggle: () => void;
   isSynthetic?: boolean;
+  mode?: DashboardMode;
 }
 
 export function Header({
   onMenuToggle,
   isSynthetic = true,
+  mode = 'DEMO',
 }: HeaderProps) {
   const { language, setLanguage, t } = useTranslation();
+  const isDemo = mode === 'DEMO' || isSynthetic;
 
   return (
     <header className="h-16 px-4 lg:px-8 border-b border-zyrvae-800/80 bg-zyrvae-950/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between">
@@ -42,7 +46,7 @@ export function Header({
       <div className="flex items-center gap-3">
         {/* Environment Badge */}
         <div className="hidden sm:flex items-center">
-          {isSynthetic ? (
+          {isDemo ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-medium bg-blue-950/70 text-blue-300 border border-blue-800/60 shadow-subtle">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
               {t.common.syntheticBadge}

@@ -326,7 +326,7 @@ export class DataService {
       N8nClient.getQualifications(),
     ]);
 
-    const totalAudits = audits.length || 1;
+    const totalAudits = audits.length;
     let accessible = 0;
     let inaccessible = 0;
     let errorCount = 0;
@@ -355,28 +355,28 @@ export class DataService {
         label: 'Sin protocolo HTTPS / SSL',
         serviceCode: 'WEB_SECURITY_SSL',
         count: noHttps,
-        percentage: Math.round((noHttps / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((noHttps / totalAudits) * 100) : 0,
       },
       {
         code: 'NO_VIEWPORT',
         label: 'Ausencia de meta viewport responsivo',
         serviceCode: 'MOBILE_RESPONSIVE_UX',
         count: noViewport,
-        percentage: Math.round((noViewport / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((noViewport / totalAudits) * 100) : 0,
       },
       {
         code: 'NO_META_DESCRIPTION',
         label: 'Metadatos SEO description ausentes',
         serviceCode: 'SEO_ONPAGE',
         count: noMetaDesc,
-        percentage: Math.round((noMetaDesc / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((noMetaDesc / totalAudits) * 100) : 0,
       },
       {
         code: 'SLOW_RESPONSE',
         label: 'Latencia de servidor elevada (> 3s)',
         serviceCode: 'WEB_PERFORMANCE',
         count: slowResponse,
-        percentage: Math.round((slowResponse / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((slowResponse / totalAudits) * 100) : 0,
       },
     ];
 
@@ -384,26 +384,26 @@ export class DataService {
       {
         category: 'Seguridad Web & SSL (WEB_SECURITY_SSL)',
         count: noHttps,
-        percentage: Math.round((noHttps / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((noHttps / totalAudits) * 100) : 0,
       },
       {
         category: 'Experiencia Móvil & UI/UX (MOBILE_RESPONSIVE_UX)',
         count: noViewport,
-        percentage: Math.round((noViewport / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((noViewport / totalAudits) * 100) : 0,
       },
       {
         category: 'SEO On-Page & Metadatos (SEO_ONPAGE)',
         count: noMetaDesc,
-        percentage: Math.round((noMetaDesc / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((noMetaDesc / totalAudits) * 100) : 0,
       },
       {
         category: 'Optimización de Rendimiento (WEB_PERFORMANCE)',
         count: slowResponse,
-        percentage: Math.round((slowResponse / totalAudits) * 100),
+        percentage: totalAudits > 0 ? Math.round((slowResponse / totalAudits) * 100) : 0,
       },
     ];
 
-    const totalQuals = qualifications.length || 1;
+    const totalQuals = qualifications.length;
     const priorityMap: Record<PriorityClassification, number> = {
       PRIORITY_HIGH: 0,
       PRIORITY_MEDIUM: 0,
@@ -421,31 +421,31 @@ export class DataService {
         classification: 'PRIORITY_HIGH' as PriorityClassification,
         label: 'Prioridad Alta',
         count: priorityMap.PRIORITY_HIGH,
-        percentage: Math.round((priorityMap.PRIORITY_HIGH / totalQuals) * 100),
+        percentage: totalQuals > 0 ? Math.round((priorityMap.PRIORITY_HIGH / totalQuals) * 100) : 0,
       },
       {
         classification: 'PRIORITY_MEDIUM' as PriorityClassification,
         label: 'Prioridad Media',
         count: priorityMap.PRIORITY_MEDIUM,
-        percentage: Math.round((priorityMap.PRIORITY_MEDIUM / totalQuals) * 100),
+        percentage: totalQuals > 0 ? Math.round((priorityMap.PRIORITY_MEDIUM / totalQuals) * 100) : 0,
       },
       {
         classification: 'PRIORITY_LOW' as PriorityClassification,
         label: 'Prioridad Baja',
         count: priorityMap.PRIORITY_LOW,
-        percentage: Math.round((priorityMap.PRIORITY_LOW / totalQuals) * 100),
+        percentage: totalQuals > 0 ? Math.round((priorityMap.PRIORITY_LOW / totalQuals) * 100) : 0,
       },
       {
         classification: 'REVIEW_REQUIRED' as PriorityClassification,
         label: 'Revisión Requerida',
         count: priorityMap.REVIEW_REQUIRED,
-        percentage: Math.round((priorityMap.REVIEW_REQUIRED / totalQuals) * 100),
+        percentage: totalQuals > 0 ? Math.round((priorityMap.REVIEW_REQUIRED / totalQuals) * 100) : 0,
       },
       {
         classification: 'EXCLUDED_TEST_DATA' as PriorityClassification,
         label: 'Excluido (Test)',
         count: priorityMap.EXCLUDED_TEST_DATA,
-        percentage: Math.round((priorityMap.EXCLUDED_TEST_DATA / totalQuals) * 100),
+        percentage: totalQuals > 0 ? Math.round((priorityMap.EXCLUDED_TEST_DATA / totalQuals) * 100) : 0,
       },
     ];
 
